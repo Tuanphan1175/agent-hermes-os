@@ -1,0 +1,17 @@
+# Bí mật — không bao giờ commit
+.streamlit/secrets.toml
+.env
+*.key
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Artifact runtime (không commit)
+streamlit.log
+shot_*.png
+
+# Claude local config
+.claude/settings.local.json

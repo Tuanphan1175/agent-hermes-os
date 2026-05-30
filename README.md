@@ -46,7 +46,7 @@ Bảng điều khiển trực quan (Streamlit + Supabase) cho hệ điều hành
 
 ## Tích hợp chi phí (tùy chọn)
 
-Tại điểm cuối mỗi luồng gọi LLM (n8n), đẩy token tiêu hao về bảng `ai_spend` bằng **HTTP Request Node** dùng **service_role key** (lưu trong n8n Credentials). Chi tiết: `security/SECURITY.md`.
+Tại điểm cuối mỗi luồng gọi LLM (n8n), đẩy token tiêu hao về bảng `ai_spend` bằng **HTTP Request Node** dùng **service_role key** (lưu trong n8n Credentials). Hướng dẫn từng bước (credential, tính cost, node, test, troubleshoot): [`docs/n8n-ai-spend.md`](docs/n8n-ai-spend.md).
 
 ## Git Robot — sao lưu tự động
 

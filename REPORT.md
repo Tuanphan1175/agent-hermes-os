@@ -60,5 +60,5 @@ RLS bật trên cả 3 bảng. Đã rotate cả anon + service_role key sau khi 
 
 - [x] Nối logic điều hướng cho các mục `Self` (Goals, SEO, Studio, Journal, Build Guide) — lọc Obsidian Vault theo mục.
 - [x] Dựng panel Mission Control từ bảng `mission_control`.
-- [ ] Cấu hình n8n HTTP Request Node đẩy chi phí thật về `ai_spend`.
+- [x] Hướng dẫn n8n đẩy chi phí thật về `ai_spend` (`docs/n8n-ai-spend.md`). (Cấu hình thực tế trên n8n nằm ngoài repo.)
 - [x] Cấu hình Git Robot backup (`.github/workflows/daily-backup.yml`) — export Supabase ra `backups/*.json` hằng ngày. (Cần thêm 2 GitHub secrets để kích hoạt.)

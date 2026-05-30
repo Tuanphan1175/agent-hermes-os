@@ -70,3 +70,7 @@ python shoot.py   # tạo shot_memory.png, shot_openclaw.png, ...
 ---
 
 > ⚠️ Trước khi public repo hoặc chia sẻ: kiểm tra `secrets.toml` không bị commit (`git check-ignore .streamlit/secrets.toml`).
+
+## License
+
+[MIT](LICENSE) © 2026 Tuanphan1175

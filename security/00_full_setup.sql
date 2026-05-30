@@ -52,6 +52,13 @@ INSERT INTO ai_spend (model_name, input_tokens, output_tokens, cost_usd) VALUES
 ('claude-sonnet-4-6', 45000, 8200, 0.159600),
 ('claude-haiku-4-5', 90000, 15000, 0.097500);
 
+-- 3b) (tùy chọn) seed mission_control để thấy panel ngay --------------
+INSERT INTO mission_control (goal_name, status, turn_budget, turns_used, progress_percent) VALUES
+('Ra mắt landing page Free AI Agents', 'In Progress', 30, 18, 60),
+('Tự động hóa SEO brief hằng tuần',    'To Do',       20,  0,  0),
+('Backup bộ não Hermes lên Git',       'Done',        10,  9, 100),
+('Tích hợp n8n đo chi phí token',      'In Progress', 25, 12, 45);
+
 -- 4) RLS --------------------------------------------------------------
 ALTER TABLE obsidian_vault  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_spend        ENABLE ROW LEVEL SECURITY;

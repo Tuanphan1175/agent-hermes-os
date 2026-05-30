@@ -59,6 +59,6 @@ RLS bật trên cả 3 bảng. Đã rotate cả anon + service_role key sau khi 
 ## Việc còn lại (tùy chọn)
 
 - [ ] Nối logic điều hướng cho các mục `Self` (Goals, SEO, Studio, Journal, Build Guide).
-- [ ] Dựng panel Mission Control từ bảng `mission_control`.
+- [x] Dựng panel Mission Control từ bảng `mission_control`.
 - [ ] Cấu hình n8n HTTP Request Node đẩy chi phí thật về `ai_spend`.
 - [ ] Cấu hình Git Robot backup (`.github/workflows/daily-backup.yml`).

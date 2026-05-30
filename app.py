@@ -171,6 +171,40 @@ st.markdown("""
         border-radius: 10px; transition: background .18s ease;
     }
     .back-link:hover { background: rgba(90,200,220,0.10); }
+
+    /* Mục sidebar dạng link (Mission Control) */
+    .side-item {
+        display: block; padding: 9px 12px; margin-bottom: 4px;
+        border-radius: 12px; color: #c9c4dc; font-weight: 500;
+        border: 1px solid transparent; transition: all .18s ease;
+    }
+    .side-item:hover {
+        background: linear-gradient(90deg, rgba(90,200,220,0.14), rgba(120,90,230,0.10));
+        border-color: rgba(120,200,220,0.30); color: #ffffff;
+    }
+    .side-item.active {
+        background: linear-gradient(90deg, rgba(90,200,220,0.16), rgba(120,90,230,0.10));
+        border-color: rgba(120,200,220,0.40); box-shadow: inset 3px 0 0 #5ad7e6; color: #ffffff;
+    }
+
+    /* Thẻ mục tiêu Mission Control */
+    .mc-card {
+        background: rgba(32,26,52,0.45); backdrop-filter: blur(12px);
+        border: 1px solid rgba(255,255,255,0.07); border-radius: 14px;
+        padding: 16px 18px; margin-bottom: 12px;
+    }
+    .mc-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .mc-title { font-size: 16px; font-weight: 600; color: #f3f1fb; }
+    .status-badge {
+        font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 20px;
+        text-transform: uppercase; letter-spacing: .5px;
+    }
+    .st-todo { background: rgba(120,120,150,0.18); color: #9a96b5; }
+    .st-prog { background: rgba(90,200,220,0.16); color: #7fdcea; }
+    .st-done { background: rgba(90,220,140,0.16); color: #74e0a0; }
+    .mc-bar { height: 8px; border-radius: 6px; background: rgba(255,255,255,0.06); overflow: hidden; }
+    .mc-fill { height: 100%; border-radius: 6px; background: linear-gradient(90deg, #5ad7e6, #8a6cff); }
+    .mc-meta { display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: #7d7796; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -196,7 +230,9 @@ def agent_row_html(key: str) -> str:
 with st.sidebar:
     st.markdown("<div style='padding: 10px 0px; font-weight:bold; color:#8b92b6;'>SELF</div>",
                 unsafe_allow_html=True)
-    nav_mission = st.button("Mission Control", use_container_width=True)
+    mc_active = " active" if active == "mission" else ""
+    st.markdown(f"<a class='nav-link side-item{mc_active}' target='_self' href='?nav=mission'>"
+                f"▦ Mission Control</a>", unsafe_allow_html=True)
 
     st.markdown("<div class='sidebar-section-title'>AGENTS</div>", unsafe_allow_html=True)
     st.markdown(agent_row_html("claude") + agent_row_html("openclaw") + agent_row_html("hermes"),
@@ -212,6 +248,46 @@ with st.sidebar:
     nav_journal = st.button("Journal", use_container_width=True)
     nav_memory = st.button("Memory", use_container_width=True)
     nav_guide = st.button("Build Guide", use_container_width=True)
+
+# 3a. PANEL MISSION CONTROL — điều phối mục tiêu chiến dịch.
+if active == "mission":
+    st.markdown("<div class='vault-heading'><span>▦ Mission Control</span></div>",
+                unsafe_allow_html=True)
+    try:
+        mc = pd.DataFrame(supabase.table("mission_control").select("*").order("id").execute().data)
+    except Exception:
+        mc = pd.DataFrame()
+
+    if mc.empty:
+        st.info("Chưa có mục tiêu nào trong Mission Control.")
+    else:
+        for col in ["progress_percent", "turns_used", "turn_budget"]:
+            mc[col] = pd.to_numeric(mc[col], errors="coerce").fillna(0).astype(int)
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Mục tiêu", len(mc))
+        c2.metric("Tiến độ TB", f"{int(mc['progress_percent'].mean())}%")
+        c3.metric("Turn đã dùng", f"{int(mc['turns_used'].sum())}/{int(mc['turn_budget'].sum())}")
+
+        STMAP = {"To Do": "st-todo", "In Progress": "st-prog", "Done": "st-done"}
+        for _, r in mc.iterrows():
+            status = str(r["status"])
+            cls = STMAP.get(status, "st-todo")
+            pct = int(r["progress_percent"])
+            st.markdown(f"""
+            <div class='mc-card'>
+              <div class='mc-top'>
+                <div class='mc-title'>{escape(str(r['goal_name']))}</div>
+                <div class='status-badge {cls}'>{escape(status)}</div>
+              </div>
+              <div class='mc-bar'><div class='mc-fill' style='width:{pct}%;'></div></div>
+              <div class='mc-meta'>
+                <span>{pct}% hoàn thành</span>
+                <span>{int(r['turns_used'])}/{int(r['turn_budget'])} turns</span>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+    st.stop()
 
 # 3b. PANEL AGENT — hiển thị khi chọn 1 agent, rồi dừng (không render vault).
 if active in AGENTS:

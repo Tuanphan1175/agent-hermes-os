@@ -2,6 +2,16 @@
 
 Bảng điều khiển trực quan (Streamlit + Supabase) cho hệ điều hành cá nhân **Hermes OS — "Bác Sĩ Chính Mình"**. Chuyển mô hình vận hành từ dòng lệnh sang một buồng lái duy nhất: theo dõi chi phí AI, điều phối đội agent, và quản trị cơ sở tri thức Obsidian Vault.
 
+## Ảnh chụp
+
+| Memory — Obsidian Vault | Mission Control |
+|---|---|
+| ![Memory](docs/screenshots/final_memory.png) | ![Mission Control](docs/screenshots/final_mission.png) |
+
+| Agent (Claude) | Self section (Build Guide) |
+|---|---|
+| ![Claude](docs/screenshots/final_claude.png) | ![Build Guide](docs/screenshots/final_guide.png) |
+
 ## Tính năng
 
 - **Memory — Obsidian Vault**: liệt kê ghi chú `.md` từ Supabase dưới dạng thẻ kính (glassmorphism), lọc theo `Recent / Notes / Omi`, tìm kiếm theo tên.

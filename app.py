@@ -175,16 +175,16 @@ st.markdown("""
     /* Mục sidebar dạng link (Mission Control) */
     .side-item {
         display: block; padding: 9px 12px; margin-bottom: 4px;
-        border-radius: 12px; color: #c9c4dc; font-weight: 500;
+        border-radius: 12px; color: #c9c4dc !important; font-weight: 500;
         border: 1px solid transparent; transition: all .18s ease;
     }
     .side-item:hover {
         background: linear-gradient(90deg, rgba(90,200,220,0.14), rgba(120,90,230,0.10));
-        border-color: rgba(120,200,220,0.30); color: #ffffff;
+        border-color: rgba(120,200,220,0.30); color: #ffffff !important;
     }
     .side-item.active {
         background: linear-gradient(90deg, rgba(90,200,220,0.16), rgba(120,90,230,0.10));
-        border-color: rgba(120,200,220,0.40); box-shadow: inset 3px 0 0 #5ad7e6; color: #ffffff;
+        border-color: rgba(120,200,220,0.40); box-shadow: inset 3px 0 0 #5ad7e6; color: #ffffff !important;
     }
 
     /* Thẻ mục tiêu Mission Control */
@@ -226,6 +226,46 @@ def agent_row_html(key: str) -> str:
             f"<span class='agent-name'>{a['label']}</span></a>")
 
 
+# Các mục SELF: mỗi mục lọc Obsidian Vault theo chuỗi khớp trong tên/đường dẫn.
+SELF_SECTIONS = {
+    "goals":   {"label": "Goals",       "icon": "◎", "match": "Goals"},
+    "seo":     {"label": "SEO",         "icon": "↗", "match": "SEO"},
+    "studio":  {"label": "Studio",      "icon": "✎", "match": "Studio"},
+    "journal": {"label": "Journal",     "icon": "▤", "match": "Journal"},
+    "memory":  {"label": "Memory",      "icon": "◈", "match": None},      # view chính (toàn vault)
+    "guide":   {"label": "Build Guide", "icon": "✦", "match": "Build"},
+}
+
+
+def self_item_html(key: str) -> str:
+    s = SELF_SECTIONS[key]
+    extra = " active" if active == key else ""
+    return (f"<a class='nav-link side-item{extra}' target='_self' href='?nav={key}'>"
+            f"{s['icon']} {s['label']}</a>")
+
+
+def render_vault_card(row) -> None:
+    # escape giá trị tệp trước khi nhúng vào HTML (chống XSS)
+    name = escape(str(row["file_name"]))
+    path = escape(str(row["file_path"]))
+    updated = escape(str(row["updated_at"]))
+    st.markdown(f"""
+    <div class="memory-card">
+        <table style="width:100%; background:none; border:none; margin:0; padding:0;">
+            <tr style="background:none; border:none;">
+                <td style="border:none; padding:0; text-align:left;">
+                    <div class="file-title">{name}.md</div>
+                    <div class="file-path">{path}</div>
+                </td>
+                <td style="border:none; padding:0; text-align:right; width:100px; vertical-align:top;">
+                    <div class="time-badge">{updated}</div>
+                </td>
+            </tr>
+        </table>
+    </div>
+    """, unsafe_allow_html=True)
+
+
 # 3. SIDEBAR ĐIỀU HƯỚNG
 with st.sidebar:
     st.markdown("<div style='padding: 10px 0px; font-weight:bold; color:#8b92b6;'>SELF</div>",
@@ -242,12 +282,9 @@ with st.sidebar:
                     "← Về Memory</a>", unsafe_allow_html=True)
 
     st.markdown("<div class='sidebar-section-title'>SELF</div>", unsafe_allow_html=True)
-    nav_goals = st.button("Goals", use_container_width=True)
-    nav_seo = st.button("SEO", use_container_width=True)
-    nav_studio = st.button("Studio", use_container_width=True)
-    nav_journal = st.button("Journal", use_container_width=True)
-    nav_memory = st.button("Memory", use_container_width=True)
-    nav_guide = st.button("Build Guide", use_container_width=True)
+    st.markdown("".join(self_item_html(k) for k in
+                ["goals", "seo", "studio", "journal", "memory", "guide"]),
+                unsafe_allow_html=True)
 
 # 3a. PANEL MISSION CONTROL — điều phối mục tiêu chiến dịch.
 if active == "mission":
@@ -322,6 +359,30 @@ if active in AGENTS:
             st.dataframe(df_a, use_container_width=True, hide_index=True)
     st.stop()
 
+# 3c. PANEL SELF — lọc Obsidian Vault theo mục (Goals/SEO/Studio/Journal/Build Guide).
+if active in SELF_SECTIONS and active != "memory":
+    s = SELF_SECTIONS[active]
+    st.markdown(f"<div class='vault-heading'><span>{s['icon']} {s['label']}</span></div>",
+                unsafe_allow_html=True)
+    try:
+        dfv = pd.DataFrame(supabase.table("obsidian_vault").select("*").execute().data)
+    except Exception:
+        dfv = pd.DataFrame()
+
+    if not dfv.empty and s["match"]:
+        m = s["match"]
+        mask = (dfv["file_path"].str.contains(m, case=False, na=False)
+                | dfv["file_name"].str.contains(m, case=False, na=False))
+        dfv = dfv[mask]
+
+    if dfv.empty:
+        st.info(f"Chưa có ghi chú nào thuộc **{s['label']}**.")
+    else:
+        st.caption(f"{len(dfv)} ghi chú")
+        for _, row in dfv.iterrows():
+            render_vault_card(row)
+    st.stop()
+
 # 4. MAIN PANEL
 st.markdown("<div class='vault-heading'><span>◈ Memory — Obsidian Vault</span></div>",
             unsafe_allow_html=True)
@@ -345,26 +406,7 @@ if not df_vault.empty:
         df_filtered = df_filtered[df_filtered["file_name"].str.contains(search_query, case=False, regex=False)]
 
     for _, row in df_filtered.iterrows():
-        # escape giá trị tệp trước khi nhúng vào HTML (chống XSS)
-        name = escape(str(row["file_name"]))
-        path = escape(str(row["file_path"]))
-        updated = escape(str(row["updated_at"]))
-        card_html = f"""
-        <div class="memory-card">
-            <table style="width:100%; background:none; border:none; margin:0; padding:0;">
-                <tr style="background:none; border:none;">
-                    <td style="border:none; padding:0; text-align:left;">
-                        <div class="file-title">{name}.md</div>
-                        <div class="file-path">{path}</div>
-                    </td>
-                    <td style="border:none; padding:0; text-align:right; width:100px; vertical-align:top;">
-                        <div class="time-badge">{updated}</div>
-                    </td>
-                </tr>
-            </table>
-        </div>
-        """
-        st.markdown(card_html, unsafe_allow_html=True)
+        render_vault_card(row)
 else:
     st.info("Hệ thống đang chờ tệp dữ liệu đồng bộ...")
 

@@ -62,3 +62,22 @@ RLS bật trên cả 3 bảng. Đã rotate cả anon + service_role key sau khi 
 - [x] Dựng panel Mission Control từ bảng `mission_control`.
 - [x] Hướng dẫn n8n đẩy chi phí thật về `ai_spend` (`docs/n8n-ai-spend.md`). (Cấu hình thực tế trên n8n nằm ngoài repo.)
 - [x] Cấu hình Git Robot backup (`.github/workflows/daily-backup.yml`) — export Supabase ra `backups/*.json` hằng ngày. (Cần thêm 2 GitHub secrets để kích hoạt.)
+- [x] Deploy live trên Streamlit Community Cloud — verify đủ view qua Playwright.
+- [x] Kết nối Hermes agent thật: shim FastAPI trên VPS (`vps/`) bọc `hermes chat -q`, panel chat trong app (`render_hermes_chat`). Đã test end-to-end OK (reply sạch).
+
+## 8. Kết nối Hermes agent thật
+
+- Phát hiện: domain `hermes.thsbsphananhtuan.com` là **ttyd web terminal** (không phải API). Hermes (Nous Research) chỉ có CLI + gateway messaging, **không có REST API**.
+- Giải pháp: HTTP shim FastAPI (`vps/hermes_api.py`) bọc `hermes chat -q`, auth Bearer, chống shell-injection, lọc output CLI → reply sạch.
+- App: panel **Chat với Hermes (thật)** trong view agent Hermes, gọi shim qua `HERMES_API_URL`/`HERMES_API_KEY` (st.secrets).
+- Test VPS: `/health` 200, `/chat` trả lời thật ("Xin chào Bác Sĩ! Em là Hermes...").
+
+### Việc còn lại để chat live trên app
+- [ ] Hoàn tất systemd service `hermes-api` trên VPS (đang làm).
+- [ ] Expose qua Cloudflare Tunnel → `https://api-hermes.<domain>`.
+- [ ] Nhập `HERMES_API_URL` + `HERMES_API_KEY` vào Streamlit Cloud Secrets.
+
+### Lưu ý vận hành (phát hiện trong quá trình)
+- ⚠️ `service_role` key local (`secrets.toml`) đang 401 — cập nhật nếu muốn xem cost local. Cloud OK.
+- ⚠️ Gateway Telegram báo **polling conflict** (2 instance) — kiểm tra tránh chạy trùng.
+- ⚠️ ttyd terminal phơi internet (chỉ Basic Auth) — nên bọc Cloudflare Access/VPN.

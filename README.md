@@ -48,6 +48,18 @@ Bảng điều khiển trực quan (Streamlit + Supabase) cho hệ điều hành
 
 Tại điểm cuối mỗi luồng gọi LLM (n8n), đẩy token tiêu hao về bảng `ai_spend` bằng **HTTP Request Node** dùng **service_role key** (lưu trong n8n Credentials). Chi tiết: `security/SECURITY.md`.
 
+## Git Robot — sao lưu tự động
+
+`.github/workflows/daily-backup.yml` chạy 00:00 giờ VN hằng ngày (hoặc bấm tay qua
+**Actions → Run workflow**): export 3 bảng Supabase ra `backups/*.json` rồi commit về repo.
+
+Cần thêm 2 secrets tại **Settings → Secrets and variables → Actions**:
+
+| Secret | Giá trị |
+|---|---|
+| `SUPABASE_URL` | URL project Supabase |
+| `SUPABASE_SERVICE_ROLE_KEY` | service_role key (đọc cả `ai_spend`) |
+
 ## Verify giao diện
 
 ```bash

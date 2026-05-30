@@ -1,0 +1,43 @@
+name: Hermes OS Daily Auto-Backup
+
+# Sao lưu "bộ não" Hermes OS: export dữ liệu Supabase ra backups/*.json
+# rồi commit về repo. Cần 2 GitHub secrets (Settings -> Secrets -> Actions):
+#   SUPABASE_URL
+#   SUPABASE_SERVICE_ROLE_KEY
+
+on:
+  schedule:
+    - cron: '0 17 * * *'   # 00:00 giờ Việt Nam (GMT+7) hằng ngày
+  workflow_dispatch:        # cho phép chạy tay
+
+permissions:
+  contents: write           # cần để Robot push commit backup
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install deps
+        run: pip install --quiet supabase
+
+      - name: Export Supabase tables
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python scripts/backup_supabase.py
+
+      - name: Commit and push backup
+        run: |
+          git config user.name "Hermes OS Robot"
+          git config user.email "hermes-bot@bacsichinhminh.vn"
+          git add backups/
+          git diff --cached --quiet || git commit -m "Auto-backup bộ não Hermes OS: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          git push

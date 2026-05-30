@@ -1,0 +1,16 @@
+[Unit]
+Description=Hermes API shim (wraps `hermes chat -q` for the dashboard)
+After=network.target
+
+[Service]
+Type=simple
+# Chạy bằng user có lệnh `hermes` (vd root, theo setup hiện tại).
+# Đặt key qua EnvironmentFile để KHÔNG lộ trong unit file.
+EnvironmentFile=/root/.hermes/hermes-api.env
+WorkingDirectory=/root/hermes-api
+ExecStart=/usr/bin/env uvicorn hermes_api:app --host 127.0.0.1 --port 9100
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

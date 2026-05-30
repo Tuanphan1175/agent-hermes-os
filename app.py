@@ -1,5 +1,6 @@
 from html import escape
 
+import httpx
 import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
@@ -266,6 +267,41 @@ def render_vault_card(row) -> None:
     """, unsafe_allow_html=True)
 
 
+def render_hermes_chat() -> None:
+    """Khung chat gọi Hermes agent thật qua HTTP shim trên VPS."""
+    url = st.secrets.get("HERMES_API_URL")
+    key = st.secrets.get("HERMES_API_KEY")
+    st.markdown("<div class='vault-heading'><span>✦ Chat với Hermes (thật)</span></div>",
+                unsafe_allow_html=True)
+    if not url:
+        st.info("Chưa cấu hình `HERMES_API_URL` trong secrets. Xem `vps/README.md` để dựng shim.")
+        return
+
+    if "hermes_msgs" not in st.session_state:
+        st.session_state.hermes_msgs = []
+    for m in st.session_state.hermes_msgs:
+        with st.chat_message(m["role"]):
+            st.markdown(m["content"])
+
+    prompt = st.chat_input("Nhắn Hermes...")
+    if prompt:
+        st.session_state.hermes_msgs.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        with st.chat_message("assistant"):
+            with st.spinner("Hermes đang nghĩ..."):
+                try:
+                    headers = {"Authorization": f"Bearer {key}"} if key else {}
+                    r = httpx.post(f"{url.rstrip('/')}/chat",
+                                   json={"message": prompt}, headers=headers, timeout=180)
+                    r.raise_for_status()
+                    reply = r.json().get("reply", "(rỗng)")
+                except Exception as e:
+                    reply = f"⚠️ Lỗi gọi Hermes: {e}"
+                st.markdown(reply)
+        st.session_state.hermes_msgs.append({"role": "assistant", "content": reply})
+
+
 # 3. SIDEBAR ĐIỀU HƯỚNG
 with st.sidebar:
     st.markdown("<div style='padding: 10px 0px; font-weight:bold; color:#8b92b6;'>SELF</div>",
@@ -357,6 +393,11 @@ if active in AGENTS:
             c2.metric("Token", f"{int(df_a['input_tokens'].sum() + df_a['output_tokens'].sum()):,}")
             c3.metric("Lần gọi", f"{len(df_a):,}")
             st.dataframe(df_a, use_container_width=True, hide_index=True)
+
+    # Hermes: thêm khung chat gọi agent thật trên VPS
+    if active == "hermes":
+        st.divider()
+        render_hermes_chat()
     st.stop()
 
 # 3c. PANEL SELF — lọc Obsidian Vault theo mục (Goals/SEO/Studio/Journal/Build Guide).

@@ -11,10 +11,43 @@ Chạy:
 """
 import hmac
 import os
+import re
 import subprocess
 
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
+
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+_NOISE = (
+    "Query:", "Initializing agent", "Resume this session", "hermes --resume",
+    "Session:", "Duration:", "Messages:", "────",
+)
+
+
+def clean_reply(raw: str) -> str:
+    """Bóc câu trả lời thật khỏi output CLI (khung ╭─ Hermes ─╮ + dòng nhiễu)."""
+    text = _ANSI.sub("", raw)
+    lines = text.splitlines()
+
+    # Ưu tiên: lấy nội dung giữa viền khung Hermes
+    out, inside = [], False
+    for ln in lines:
+        s = ln.strip()
+        if "╭" in s and "Hermes" in s:
+            inside = True
+            continue
+        if s.startswith("╰"):
+            inside = False
+            continue
+        if inside:
+            out.append(s.strip("│").strip())
+    cleaned = "\n".join(l for l in out if l).strip()
+    if cleaned:
+        return cleaned
+
+    # Dự phòng: bỏ các dòng nhiễu đã biết
+    keep = [l for l in lines if l.strip() and not l.strip().startswith(_NOISE)]
+    return "\n".join(keep).strip()
 
 API_KEY = os.environ["HERMES_API_KEY"]
 HERMES_BIN = os.environ.get("HERMES_BIN", "hermes")
@@ -60,4 +93,4 @@ def chat(body: ChatIn, authorization: str = Header(default="")):
     if proc.returncode != 0:
         raise HTTPException(status_code=500, detail=(proc.stderr or "hermes error")[-500:])
 
-    return {"reply": proc.stdout.strip()}
+    return {"reply": clean_reply(proc.stdout)}

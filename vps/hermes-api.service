@@ -8,7 +8,7 @@ Type=simple
 # Đặt key qua EnvironmentFile để KHÔNG lộ trong unit file.
 EnvironmentFile=/root/.hermes/hermes-api.env
 WorkingDirectory=/root/hermes-api
-ExecStart=/usr/bin/env uvicorn hermes_api:app --host 127.0.0.1 --port 9100
+ExecStart=/root/hermes-api/venv/bin/uvicorn hermes_api:app --host 127.0.0.1 --port 9100
 Restart=on-failure
 RestartSec=3
 

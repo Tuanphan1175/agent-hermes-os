@@ -1,5 +1,9 @@
 # Hermes OS Dashboard v2.0
 
+[![Live App](https://img.shields.io/badge/Live%20App-Streamlit%20Cloud-5ad7e6?logo=streamlit&logoColor=white)](https://agent-hermes-os-h5hnqgo9s6appiwokfsxh7g.streamlit.app/)
+
+🔗 **Live demo:** https://agent-hermes-os-h5hnqgo9s6appiwokfsxh7g.streamlit.app/
+
 Bảng điều khiển trực quan (Streamlit + Supabase) cho hệ điều hành cá nhân **Hermes OS — "Bác Sĩ Chính Mình"**. Chuyển mô hình vận hành từ dòng lệnh sang một buồng lái duy nhất: theo dõi chi phí AI, điều phối đội agent, và quản trị cơ sở tri thức Obsidian Vault.
 
 ## Ảnh chụp

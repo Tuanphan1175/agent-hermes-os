@@ -77,9 +77,15 @@ Cần thêm 2 secrets tại **Settings → Secrets and variables → Actions**:
 ## Verify giao diện
 
 ```bash
-pip install playwright && playwright install chromium
+pip install -r requirements-dev.txt && playwright install chromium
 python shoot.py   # tạo shot_memory.png, shot_openclaw.png, ...
 ```
+
+## Deploy
+
+Triển khai trên **Streamlit Community Cloud** (native, free, tự build mỗi push). Vercel
+không hợp Streamlit (serverless không giữ được server + websocket). Hướng dẫn từng bước:
+[`docs/deploy-streamlit-cloud.md`](docs/deploy-streamlit-cloud.md).
 
 ---
 

@@ -1,0 +1,3 @@
+# Dev — chỉ cần khi chạy verify giao diện (shoot.py). KHÔNG cần khi deploy.
+-r requirements.txt
+playwright==1.58.0

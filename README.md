@@ -30,7 +30,7 @@ Bảng điều khiển trực quan (Streamlit + Supabase) cho hệ điều hành
 
 1. Cài phụ thuộc:
    ```bash
-   pip install streamlit pandas supabase
+   pip install -r requirements.txt
    ```
 2. Tạo cấu hình từ mẫu rồi điền key thật:
    ```bash

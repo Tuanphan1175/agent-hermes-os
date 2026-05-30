@@ -1,0 +1,7 @@
+# Runtime — bắt buộc để chạy dashboard
+streamlit==1.58.0
+pandas==3.0.3
+supabase==2.30.1
+
+# Dev — chỉ cần khi chạy verify giao diện (shoot.py)
+playwright==1.58.0

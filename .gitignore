@@ -15,4 +15,6 @@ shot_*.png
 
 # Claude local config
 .claude/settings.local.json
-final_*.png
+
+# Bản gốc screenshot ở root (bản chuẩn nằm trong docs/screenshots/)
+/final_*.png

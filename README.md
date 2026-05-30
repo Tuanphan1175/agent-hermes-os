@@ -12,6 +12,10 @@ Bảng điều khiển trực quan (Streamlit + Supabase) cho hệ điều hành
 |---|---|
 | ![Claude](docs/screenshots/final_claude.png) | ![Build Guide](docs/screenshots/final_guide.png) |
 
+| Agent (Hermes) | Agent (OpenClaw) |
+|---|---|
+| ![Hermes](docs/screenshots/final_hermes.png) | ![OpenClaw](docs/screenshots/final_openclaw.png) |
+
 ## Tính năng
 
 - **Memory — Obsidian Vault**: liệt kê ghi chú `.md` từ Supabase dưới dạng thẻ kính (glassmorphism), lọc theo `Recent / Notes / Omi`, tìm kiếm theo tên.

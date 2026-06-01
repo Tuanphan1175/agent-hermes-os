@@ -53,23 +53,28 @@ curl -s -X POST localhost:9100/chat \
   -d '{"message":"Xin chào Hermes"}'
 ```
 
-## 4. Expose ra internet (Cloudflare)
+## 4. Expose ra internet
 
-Shim chỉ listen `127.0.0.1:9100`. Đưa ra ngoài qua **Cloudflare Tunnel** (khuyến nghị, không mở port):
+> **Triển khai thực tế** dùng **Nginx Proxy Manager** (Docker `jc21/nginx-proxy-manager`, giữ 80/443) → `https://hermes-api.tuandoctor.com`. NPM chạy trong container nên **không** với tới `127.0.0.1` của host. Sửa shim bind gateway docker của NPM:
+>
+> ```bash
+> # lấy gateway mạng NPM
+> docker network inspect $(docker inspect nginx-proxy-manager \
+>   -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}') \
+>   -f '{{(index .IPAM.Config 0).Gateway}}'    # vd 172.26.0.1
+> ```
+>
+> Đổi `ExecStart` trong unit: `--host 127.0.0.1` → `--host <gateway>` (vd `172.26.0.1`), `daemon-reload` + restart.
+> Trong NPM UI (cổng 81): **Add Proxy Host** → domain `hermes-api.tuandoctor.com`, scheme `http`, forward `<gateway>:9100`, tab SSL **Request a new Certificate** + Force SSL. Nếu DNS proxy qua Cloudflare (orange) làm fail HTTP-01 challenge → tắt proxy CF (xám mây) khi xin cert, hoặc dùng DNS Challenge.
 
-```bash
-cloudflared tunnel --url http://localhost:9100
-# hoặc cấu hình named tunnel -> api-hermes.thsbsphananhtuan.com
-```
-
-Hoặc dùng reverse proxy (nginx/caddy) sẵn có, trỏ subdomain `api-hermes...` → `127.0.0.1:9100`.
+Cách khác (không Docker): Cloudflare Tunnel `cloudflared tunnel --url http://localhost:9100`, hoặc reverse proxy host nginx/caddy trỏ subdomain → `127.0.0.1:9100` (giữ bind `127.0.0.1`).
 
 ## 5. Cấu hình dashboard
 
 Trên Streamlit Cloud → **Settings → Secrets**, thêm:
 
 ```toml
-HERMES_API_URL = "https://api-hermes.thsbsphananhtuan.com"
+HERMES_API_URL = "https://hermes-api.tuandoctor.com"
 HERMES_API_KEY = "<đúng key ở bước 2>"
 ```
 
@@ -80,5 +85,5 @@ Mở app → agent **Hermes** → khung chat "Chat với Hermes (thật)" hiện
 - Key chỉ nằm trong `hermes-api.env` (VPS) + Streamlit Secrets — KHÔNG vào repo.
 - Shim chống shell-injection (subprocess arg list, không `shell=True`).
 - Auth Bearer so sánh hằng-thời-gian.
-- Chỉ listen localhost; ra ngoài qua Cloudflare (TLS + có thể bật Access/WAF).
+- Shim bind gateway docker NPM (`172.26.0.1`), không phơi ra internet trực tiếp; TLS do NPM (Let's Encrypt) đảm nhiệm tại biên.
 - ⚠️ Đổi (rotate) key nếu nghi lộ; cập nhật cả env VPS lẫn Streamlit Secrets.

@@ -73,9 +73,11 @@ RLS bật trên cả 3 bảng. Đã rotate cả anon + service_role key sau khi 
 - Test VPS: `/health` 200, `/chat` trả lời thật ("Xin chào Bác Sĩ! Em là Hermes...").
 
 ### Việc còn lại để chat live trên app
-- [ ] Hoàn tất systemd service `hermes-api` trên VPS (đang làm).
-- [ ] Expose qua Cloudflare Tunnel → `https://api-hermes.<domain>`.
-- [ ] Nhập `HERMES_API_URL` + `HERMES_API_KEY` vào Streamlit Cloud Secrets.
+- [x] Hoàn tất systemd service `hermes-api` trên VPS — `systemctl --user`, env `/root/.hermes/hermes-api.env`, shim bind `172.26.0.1:9100` (gateway docker để NPM với tới).
+- [x] Expose qua **Nginx Proxy Manager** (không phải Cloudflare Tunnel) → `https://hermes-api.tuandoctor.com`, cert Let's Encrypt hợp lệ. Verify: `/health` 200, `/chat` + Bearer trả reply thật qua HTTPS công khai.
+- [ ] Nhập `HERMES_API_URL` + `HERMES_API_KEY` vào Streamlit Cloud Secrets (bước cuối, thao tác trên Streamlit Cloud UI).
+
+> Lưu ý hạ tầng thật (khác README mẫu): domain = `tuandoctor.com`; reverse proxy = Nginx Proxy Manager (Docker, `jc21/nginx-proxy-manager`) giữ 80/443, **không** dùng host `nginx.service` hay Cloudflare Tunnel. Shim bind `172.26.0.1` (gateway mạng docker của NPM) thay vì `127.0.0.1` để container NPM proxy tới được.
 
 ### Lưu ý vận hành (phát hiện trong quá trình)
 - ⚠️ `service_role` key local (`secrets.toml`) đang 401 — cập nhật nếu muốn xem cost local. Cloud OK.

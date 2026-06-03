@@ -1,5 +1,6 @@
 import json
 import os
+from datetime import datetime, timezone
 from html import escape
 import httpx
 import streamlit as st
@@ -1674,7 +1675,82 @@ if active == "studio":
     st.stop()
 
 # ------------------------------------------------------------------------------
-# VIEW: ALL OTHER SELF SECTIONS (Notebook, Journal, Guide)
+# VIEW: NOTEBOOK (Roman Numeral XII) — scratchpad markdown lưu vào bảng notebook
+# ------------------------------------------------------------------------------
+if active == "notebook":
+    nb = SELF_SECTIONS["notebook"]
+    render_custom_header(nb["num"], "SELF", nb["label"], nb["desc"])
+
+    admin = get_admin_client()
+    can_write = admin is not None
+
+    # Đọc notebook (anon đọc được nhờ RLS) — mới nhất trước.
+    try:
+        res = supabase.table("notebook").select("*").order("updated_at", desc=True).execute()
+        notes = res.data or []
+    except Exception:
+        notes = []
+
+    if not can_write:
+        st.warning("Thiếu SUPABASE_SERVICE_ROLE_KEY — chế độ chỉ-xem, không thêm/sửa/xoá được ghi chú.")
+
+    # --- Ghi chú mới ---
+    with st.expander("➕ Ghi chú mới", expanded=not notes):
+        with st.form("add_note", clear_on_submit=True):
+            n_title = st.text_input("Tiêu đề", placeholder="vd. Ý tưởng nội dung tuần này")
+            n_body = st.text_area("Nội dung (Markdown)", height=160,
+                                  placeholder="# Heading\n- ý tưởng A\n- ý tưởng B")
+            add_ok = st.form_submit_button("💾 Lưu ghi chú", disabled=not can_write, use_container_width=True)
+        if add_ok:
+            if not (n_title.strip() or n_body.strip()):
+                st.warning("Nhập tiêu đề hoặc nội dung.")
+            elif can_write:
+                admin.table("notebook").insert({
+                    "title": n_title.strip() or "Untitled",
+                    "content": n_body,
+                }).execute()
+                st.success("Đã lưu ghi chú.")
+                st.rerun()
+
+    # --- Danh sách ghi chú ---
+    if not notes:
+        st.info("Chưa có ghi chú nào. Thêm ở khung trên.")
+    else:
+        for note in notes:
+            nid = int(note["id"])
+            title = str(note.get("title") or "Untitled")
+            content = str(note.get("content") or "")
+            disp = str(note.get("updated_at") or "")[:16].replace("T", " ")
+            st.markdown(f"""
+            <div class='mc-card' style='margin-bottom:6px;'>
+              <div class='mc-top'>
+                <div class='mc-title'>{escape(title)}</div>
+                <div class='time-badge'>{escape(disp)}</div>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+            if content.strip():
+                # st.markdown KHÔNG cho raw HTML (unsafe_allow_html mặc định False) -> an toàn XSS.
+                st.markdown(content)
+
+            with st.expander("✎ Sửa / Xoá", expanded=False):
+                up_title = st.text_input("Tiêu đề", value=title, key=f"nt_{nid}")
+                up_body = st.text_area("Nội dung (Markdown)", value=content, height=180, key=f"nb_{nid}")
+                e1, e2 = st.columns(2)
+                if e1.button("💾 Lưu thay đổi", key=f"nsv_{nid}", disabled=not can_write, use_container_width=True):
+                    admin.table("notebook").update({
+                        "title": up_title.strip() or "Untitled",
+                        "content": up_body,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    }).eq("id", nid).execute()
+                    st.rerun()
+                if e2.button("🗑 Xoá ghi chú", key=f"ndel_{nid}", disabled=not can_write, use_container_width=True):
+                    admin.table("notebook").delete().eq("id", nid).execute()
+                    st.rerun()
+    st.stop()
+
+# ------------------------------------------------------------------------------
+# VIEW: ALL OTHER SELF SECTIONS (Journal, Guide)
 # ------------------------------------------------------------------------------
 if active in SELF_SECTIONS and active != "memory":
     s = SELF_SECTIONS[active]

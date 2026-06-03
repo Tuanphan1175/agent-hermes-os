@@ -7,6 +7,7 @@
 DROP TABLE IF EXISTS obsidian_vault;
 DROP TABLE IF EXISTS ai_spend;
 DROP TABLE IF EXISTS mission_control;
+DROP TABLE IF EXISTS notebook;
 
 CREATE TABLE obsidian_vault (
     id SERIAL PRIMARY KEY,
@@ -33,6 +34,13 @@ CREATE TABLE mission_control (
     turn_budget INTEGER DEFAULT 20,
     turns_used INTEGER DEFAULT 0,
     progress_percent INTEGER DEFAULT 0
+);
+
+CREATE TABLE notebook (
+    id SERIAL PRIMARY KEY,
+    title TEXT NOT NULL DEFAULT 'Untitled',
+    content TEXT NOT NULL DEFAULT '',
+    updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc', NOW())
 );
 
 -- 2) SEED obsidian_vault ---------------------------------------------
@@ -64,10 +72,13 @@ INSERT INTO mission_control (goal_name, status, turn_budget, turns_used, progres
 ALTER TABLE obsidian_vault  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_spend        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE mission_control ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notebook        ENABLE ROW LEVEL SECURITY;
 
 REVOKE INSERT, UPDATE, DELETE ON obsidian_vault  FROM anon;
 REVOKE INSERT, UPDATE, DELETE ON ai_spend        FROM anon;
 REVOKE INSERT, UPDATE, DELETE ON mission_control FROM anon;
+GRANT  SELECT                  ON notebook        TO   anon;
+REVOKE INSERT, UPDATE, DELETE ON notebook        FROM anon;
 
 DROP POLICY IF EXISTS "vault_read_anon" ON obsidian_vault;
 CREATE POLICY "vault_read_anon" ON obsidian_vault
@@ -75,6 +86,10 @@ CREATE POLICY "vault_read_anon" ON obsidian_vault
 
 DROP POLICY IF EXISTS "mission_read_anon" ON mission_control;
 CREATE POLICY "mission_read_anon" ON mission_control
+    FOR SELECT TO anon USING (true);
+
+DROP POLICY IF EXISTS "notebook_read_anon" ON notebook;
+CREATE POLICY "notebook_read_anon" ON notebook
     FOR SELECT TO anon USING (true);
 
 -- ai_spend: cố ý KHÔNG có policy cho anon -> anon bị chặn đọc/ghi.

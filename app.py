@@ -1631,7 +1631,50 @@ if active == "goals":
     st.stop()
 
 # ------------------------------------------------------------------------------
-# VIEW: ALL OTHER SELF SECTIONS (Studio, Notebook, Journal, Guide)
+# VIEW: STUDIO (Roman Numeral XI) — launchpad công cụ media generation
+# ------------------------------------------------------------------------------
+if active == "studio":
+    s = SELF_SECTIONS["studio"]
+    render_custom_header(s["num"], "SELF", s["label"], s["desc"])
+
+    # Mỗi tool: link mặc định trỏ trang chính thức, ghi đè được qua secret (key).
+    STUDIO_TOOLS = [
+        {"name": "Higgsfield",  "icon": "✦", "color": "#ff7eb3", "key": "STUDIO_HIGGSFIELD_URL", "url": "https://higgsfield.ai", "desc": "Image & video generation"},
+        {"name": "Gamma",       "icon": "◰", "color": "#a855f7", "key": "STUDIO_GAMMA_URL",      "url": "https://gamma.app",     "desc": "AI decks & one-pagers"},
+        {"name": "Canva",       "icon": "◇", "color": "#22d3ee", "key": "STUDIO_CANVA_URL",      "url": "https://www.canva.com", "desc": "Design & templates"},
+        {"name": "Figma",       "icon": "❖", "color": "#fb7185", "key": "STUDIO_FIGMA_URL",      "url": "https://figma.com",     "desc": "UI & visual design"},
+        {"name": "n8n Studio",  "icon": "⬡", "color": "#10b981", "key": "STUDIO_N8N_URL",        "url": "https://n8n.io",        "desc": "Video render workflows"},
+        {"name": "ElevenLabs",  "icon": "♪", "color": "#f59e0b", "key": "STUDIO_ELEVENLABS_URL", "url": "https://elevenlabs.io", "desc": "Voiceover & audio"},
+    ]
+
+    st.markdown("""
+    <style>
+    .studio-card { transition: all .2s ease; }
+    .studio-card:hover { transform: translateY(-3px); border-color: rgba(255,255,255,0.18) !important; box-shadow: 0 14px 44px rgba(0,0,0,0.5); }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
+    cols = st.columns(3)
+    for i, t in enumerate(STUDIO_TOOLS):
+        url = st.secrets.get(t["key"], t["url"])
+        with cols[i % 3]:
+            st.markdown(f"""
+            <a href="{escape(url)}" target="_blank" style="text-decoration:none; display:block; margin-bottom:18px;">
+              <div class="studio-card" style="background: rgba(30,24,52,0.45); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border:1px solid rgba(255,255,255,0.06); border-radius:14px; padding:24px 18px; text-align:center; box-shadow:0 8px 32px rgba(0,0,0,0.35);">
+                <div style="font-size:36px; color:{t['color']}; filter:drop-shadow(0 0 10px {t['color']}66); margin-bottom:10px; line-height:1;">{t['icon']}</div>
+                <div style="color:#fff; font-weight:600; font-size:16px;">{escape(t['name'])}</div>
+                <div style="color:#a5a1c0; font-size:12.5px; margin-top:4px; font-weight:300; line-height:1.4;">{escape(t['desc'])}</div>
+                <div style="color:{t['color']}; font-size:12px; margin-top:14px; font-weight:600; letter-spacing:0.3px;">Mở ↗</div>
+              </div>
+            </a>
+            """, unsafe_allow_html=True)
+
+    st.caption("Link mỗi công cụ cấu hình được qua secrets (STUDIO_*_URL) — mặc định trỏ trang chính thức.")
+    st.stop()
+
+# ------------------------------------------------------------------------------
+# VIEW: ALL OTHER SELF SECTIONS (Notebook, Journal, Guide)
 # ------------------------------------------------------------------------------
 if active in SELF_SECTIONS and active != "memory":
     s = SELF_SECTIONS[active]

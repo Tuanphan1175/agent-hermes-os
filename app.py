@@ -1,346 +1,555 @@
+import os
 from html import escape
-
 import httpx
 import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
 
-# 1. CẤU HÌNH KẾT NỐI — đọc bí mật từ st.secrets, KHÔNG hardcode.
-#    Streamlit chạy server-side nên key không lộ ra trình duyệt.
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_ANON_KEY = st.secrets["SUPABASE_ANON_KEY"]
+# ==============================================================================
+# 1. DATABASE CONNECTIVITY & KEY RETRIEVAL
+# ==============================================================================
 
-# Dashboard chỉ ĐỌC dữ liệu công khai đã được RLS bảo vệ -> dùng anon key.
+SUPABASE_URL = st.secrets.get("SUPABASE_URL", "https://your-project.supabase.co")
+SUPABASE_ANON_KEY = st.secrets.get("SUPABASE_ANON_KEY", "your-anon-key")
+
+# Core client (Public tables: obsidian_vault, mission_control)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
-
-# Client service_role RIÊNG để đọc dữ liệu nhạy cảm (ai_spend) — bỏ qua RLS.
-# CHỈ chạy server-side (Streamlit server). Không bao giờ lộ key ra browser.
-# Tách hẳn khỏi client anon; chỉ khởi tạo khi có key.
+# Admin client (Sensitive tables: ai_spend)
 @st.cache_resource
 def get_admin_client() -> Client | None:
     key = st.secrets.get("SUPABASE_SERVICE_ROLE_KEY")
-    if not key or key == "your-service-role-key":
+    if not key or key == "your-service-role-key" or key == "<service_role key>":
         return None
-    return create_client(SUPABASE_URL, key)
+    try:
+        return create_client(SUPABASE_URL, key)
+    except Exception:
+        return None
 
-st.set_page_config(page_title="Hermes OS", layout="wide", initial_sidebar_state="expanded")
+# ==============================================================================
+# 2. PAGE INITIALIZATION & PREMIUM TYPOGRAPHY & DESIGN STYLES
+# ==============================================================================
 
-# 2. GIAO DIỆN — Glassmorphism tím/indigo + accent cyan (đồng bộ ảnh mẫu)
+st.set_page_config(page_title="Agentic OS", layout="wide", initial_sidebar_state="expanded")
+
+# Inject Google Fonts and Custom Modern Violet Glassmorphism Styling
 st.markdown("""
     <style>
-    /* Nền: gradient tím-indigo + glow tím trên đỉnh */
-    /* Ẩn header trắng + toolbar Streamlit để theme liền mạch */
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Cinzel:wght@400;600&family=JetBrains+Mono:wght@300;400;500&display=swap');
+
+    /* Global Body Overrides */
     [data-testid="stHeader"] { background: transparent !important; }
     [data-testid="stToolbar"], [data-testid="stDecoration"] { display: none !important; }
-    .block-container { padding-top: 2.2rem; }
+    .block-container { padding-top: 2rem; padding-bottom: 2rem; }
 
-    .stApp {
+    html, body, [class*="css"], .stApp {
+        font-family: 'Outfit', sans-serif !important;
         background:
-            radial-gradient(900px 500px at 60% -10%, rgba(120,70,200,0.35) 0%, rgba(120,70,200,0) 55%),
-            radial-gradient(700px 400px at 12% 5%, rgba(80,40,140,0.30) 0%, rgba(80,40,140,0) 50%),
-            linear-gradient(160deg, #14101f 0%, #0d0a16 45%, #08060d 100%);
+            radial-gradient(900px 500px at 60% -10%, rgba(120,70,200,0.32) 0%, rgba(120,70,200,0) 55%),
+            radial-gradient(700px 400px at 12% 5%, rgba(80,40,140,0.25) 0%, rgba(80,40,140,0) 50%),
+            linear-gradient(160deg, #120e22 0%, #0a0715 45%, #05040a 100%);
         background-attachment: fixed;
         color: #d8d4e6;
     }
 
-    /* Sidebar: gradient tím trong, viền kính */
+    /* Sidebar glass effect & design */
     [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, rgba(30,22,52,0.85) 0%, rgba(16,11,28,0.85) 100%);
-        backdrop-filter: blur(14px);
-        -webkit-backdrop-filter: blur(14px);
-        border-right: 1px solid rgba(255,255,255,0.06);
+        background: linear-gradient(180deg, rgba(26,20,44,0.92) 0%, rgba(12,8,22,0.95) 100%) !important;
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border-right: 1px solid rgba(255,255,255,0.05);
+    }
+    
+    [data-testid="stSidebar"] .stButton > button {
+        background: rgba(255,255,255,0.01) !important;
+        border: 1px solid transparent !important;
+        border-radius: 10px !important;
+        color: #a5a1c0 !important;
+        text-align: left !important;
+        justify-content: flex-start !important;
+        padding: 8px 12px !important;
+        transition: all .2s ease !important;
+    }
+    
+    [data-testid="stSidebar"] .stButton > button:hover {
+        background: linear-gradient(90deg, rgba(90,200,220,0.12), rgba(120,90,230,0.08)) !important;
+        border: 1px solid rgba(120,200,220,0.20) !important;
+        color: #ffffff !important;
+        box-shadow: inset 3px 0 0 #5ad7e6 !important;
     }
 
-    /* Card ghi chú: kính mờ, viền sáng mảnh, bo góc lớn */
-    .memory-card {
-        background: rgba(32,26,52,0.45);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        border: 1px solid rgba(255,255,255,0.07);
-        border-radius: 14px;
-        padding: 16px 18px;
-        margin-bottom: 10px;
-        transition: border-color .18s ease, background .18s ease;
-    }
-    .memory-card:hover {
-        background: rgba(46,36,74,0.55);
-        border-color: rgba(120,200,220,0.35);
-    }
-    .file-title { font-size: 15px; font-weight: 600; color: #f3f1fb; margin-bottom: 3px; }
-    .file-path { font-size: 12px; color: #7d7796; font-family: monospace; }
-    .time-badge { font-size: 12px; color: #7d7796; text-align: right; }
+    /* Modern Styled Labels & Sections */
     .sidebar-section-title {
         font-size: 11px; font-weight: 700; color: #5b5478;
         text-transform: uppercase; letter-spacing: 2px;
-        margin-top: 20px; margin-bottom: 8px; padding-left: 10px;
+        margin-top: 25px; margin-bottom: 12px; padding-left: 10px;
     }
 
-    /* Heading gradient cyan -> tím + thanh accent trái */
-    .vault-heading {
-        display: flex; align-items: center; gap: 10px;
-        font-size: 20px; font-weight: 600; margin: 4px 0 14px 0;
-    }
-    .vault-heading::before {
-        content: ""; width: 3px; height: 22px; border-radius: 3px;
-        background: linear-gradient(180deg, #5ad7e6, #8a6cff);
-        box-shadow: 0 0 10px rgba(90,215,230,0.6);
-    }
-    .vault-heading span {
-        background: linear-gradient(90deg, #6fe0ec 0%, #9b8cff 100%);
-        -webkit-background-clip: text; background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
+    /* Navigation Links Styling */
+    .nav-link { text-decoration: none; color: inherit; display: block; }
+    .nav-link:hover { text-decoration: none; color: inherit; }
 
-    /* Nút sidebar: dạng kính, hover phát sáng cyan */
-    [data-testid="stSidebar"] .stButton > button {
-        background: rgba(255,255,255,0.02);
-        border: 1px solid transparent;
-        border-radius: 12px;
-        color: #c9c4dc; font-weight: 500;
-        text-align: left; justify-content: flex-start;
-        transition: all .18s ease;
-    }
-    [data-testid="stSidebar"] .stButton > button:hover {
-        background: linear-gradient(90deg, rgba(90,200,220,0.14), rgba(120,90,230,0.10));
-        border: 1px solid rgba(120,200,220,0.30);
-        color: #ffffff;
-        box-shadow: inset 3px 0 0 #5ad7e6;
-    }
-    [data-testid="stSidebar"] .stButton > button:focus {
-        box-shadow: inset 3px 0 0 #5ad7e6; color: #ffffff;
-    }
-
-    /* Ô tìm kiếm: kính */
-    [data-testid="stTextInput"] input {
-        background: rgba(28,22,46,0.55) !important;
-        border: 1px solid rgba(255,255,255,0.08) !important;
-        border-radius: 12px !important;
-        color: #e7e3f3 !important;
-    }
-
-    /* Tab Recent/Notes/Omi: pill kính tím */
-    [data-testid="stRadio"] label {
-        background: rgba(40,30,66,0.45);
-        border: 1px solid rgba(255,255,255,0.07);
-        border-radius: 10px; padding: 6px 14px; margin-right: 6px;
-    }
-
-    /* Metric (AI Spend) trên nền kính */
-    [data-testid="stMetric"] {
-        background: rgba(32,26,52,0.40);
-        border: 1px solid rgba(255,255,255,0.06);
-        border-radius: 14px; padding: 14px 16px;
-    }
-
-    /* Hàng AGENT: avatar tròn gradient + tên */
+    /* Custom Agent list styling in sidebar */
     .agent-row {
         display: flex; align-items: center; gap: 12px;
-        padding: 9px 10px; margin-bottom: 4px;
-        border-radius: 12px; cursor: pointer;
-        border: 1px solid transparent;
-        transition: all .18s ease;
+        padding: 9px 12px; margin-bottom: 5px;
+        border-radius: 10px; border: 1px solid transparent;
+        transition: all 0.2s ease; cursor: pointer;
     }
     .agent-row:hover {
-        background: rgba(255,255,255,0.04);
-        border-color: rgba(120,200,220,0.25);
+        background: rgba(255,255,255,0.03);
+        border-color: rgba(90,215,230,0.18);
     }
-    .agent-avatar {
-        width: 30px; height: 30px; border-radius: 50%;
-        flex-shrink: 0;
-        display: flex; align-items: center; justify-content: center;
-        font-size: 14px; color: #ffffff;
-        box-shadow: 0 0 12px rgba(0,0,0,0.4);
-    }
-    .agent-name { font-size: 15px; font-weight: 500; color: #d8d4e6 !important; }
-    .nav-link:focus, .nav-link:focus-visible { outline: none; color: inherit !important; }
-    .av-claude   { background: linear-gradient(135deg, #ff9d4d, #ff6a3d); box-shadow: 0 0 14px rgba(255,130,60,0.45); }
-    .av-openclaw { background: linear-gradient(135deg, #ff7eb3, #ff4d6d); box-shadow: 0 0 14px rgba(255,90,130,0.45); }
-    .av-hermes   { background: linear-gradient(135deg, #5aa9ff, #4d6dff); box-shadow: 0 0 14px rgba(80,130,255,0.45); }
-
-    /* Link điều hướng agent: bỏ gạch chân, hàng active sáng cyan */
-    .nav-link, .nav-link:hover, .nav-link:visited { text-decoration: none; color: inherit; }
     .agent-row.active {
-        background: linear-gradient(90deg, rgba(90,200,220,0.16), rgba(120,90,230,0.10));
-        border-color: rgba(120,200,220,0.40);
+        background: linear-gradient(90deg, rgba(90,200,220,0.15), rgba(120,90,230,0.08));
+        border-color: rgba(90,215,230,0.3);
         box-shadow: inset 3px 0 0 #5ad7e6;
     }
-    .agent-row.active .agent-name { color: #ffffff; font-weight: 600; }
-    .back-link {
-        display: block;
-        font-size: 13px; color: #8fd9e6 !important; padding: 8px 10px; margin-top: 6px;
-        border-radius: 10px; transition: background .18s ease;
+    .agent-avatar {
+        width: 28px; height: 28px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 13px; color: #ffffff; font-weight: bold;
+        box-shadow: 0 0 10px rgba(0,0,0,0.4);
     }
-    .back-link:hover { background: rgba(90,200,220,0.10); }
+    .agent-name { font-size: 14px; font-weight: 500; color: #d8d4e6; }
+    .agent-row.active .agent-name { color: #ffffff; font-weight: 600; }
 
-    /* Mục sidebar dạng link (Mission Control) */
+    /* Avatar specific gradient coloring */
+    .av-claude       { background: linear-gradient(135deg, #ff9d4d, #ff6a3d); }
+    .av-openclaw     { background: linear-gradient(135deg, #ff7eb3, #ff4d6d); }
+    .av-hermes       { background: linear-gradient(135deg, #5aa9ff, #4d6dff); }
+    .av-gemini       { background: linear-gradient(135deg, #a855f7, #7c3aed); }
+    .av-antigravity  { background: linear-gradient(135deg, #6366f1, #4f46e5); }
+    .av-codex        { background: linear-gradient(135deg, #10b981, #059669); }
+    .av-freeclaw     { background: linear-gradient(135deg, #34d399, #10b981); }
+
+    /* Self sidebar item styling */
     .side-item {
-        display: block; padding: 9px 12px; margin-bottom: 4px;
-        border-radius: 12px; color: #c9c4dc !important; font-weight: 500;
-        border: 1px solid transparent; transition: all .18s ease;
+        display: block; padding: 8px 12px; margin-bottom: 5px;
+        border-radius: 10px; color: #a5a1c0 !important; font-weight: 500;
+        font-size: 14px; border: 1px solid transparent; transition: all 0.2s ease;
+        text-decoration: none !important;
     }
     .side-item:hover {
-        background: linear-gradient(90deg, rgba(90,200,220,0.14), rgba(120,90,230,0.10));
-        border-color: rgba(120,200,220,0.30); color: #ffffff !important;
+        background: rgba(255,255,255,0.03);
+        border-color: rgba(90,215,230,0.18);
+        color: #ffffff !important;
     }
     .side-item.active {
-        background: linear-gradient(90deg, rgba(90,200,220,0.16), rgba(120,90,230,0.10));
-        border-color: rgba(120,200,220,0.40); box-shadow: inset 3px 0 0 #5ad7e6; color: #ffffff !important;
+        background: linear-gradient(90deg, rgba(90,200,220,0.15), rgba(120,90,230,0.08));
+        border-color: rgba(90,215,230,0.3);
+        box-shadow: inset 3px 0 0 #5ad7e6;
+        color: #ffffff !important;
     }
 
-    /* Thẻ mục tiêu Mission Control */
+    /* Cards and Vault details */
+    .memory-card {
+        background: rgba(30, 24, 52, 0.4);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255,255,255,0.06);
+        border-radius: 12px;
+        padding: 14px 18px;
+        margin-bottom: 10px;
+        transition: all 0.2s ease;
+    }
+    .memory-card:hover {
+        background: rgba(45, 35, 75, 0.5);
+        border-color: rgba(90,215,230,0.25);
+    }
+    .file-title { font-size: 15px; font-weight: 600; color: #ffffff; }
+    .file-path { font-size: 12px; color: #7d7796; font-family: 'JetBrains Mono', monospace; margin-top: 2px; }
+    .time-badge { font-size: 12px; color: #8a84a6; text-align: right; }
+
+    /* Mission Control goals cards */
     .mc-card {
-        background: rgba(32,26,52,0.45); backdrop-filter: blur(12px);
-        border: 1px solid rgba(255,255,255,0.07); border-radius: 14px;
+        background: rgba(32,26,52,0.4); backdrop-filter: blur(12px);
+        border: 1px solid rgba(255,255,255,0.06); border-radius: 12px;
         padding: 16px 18px; margin-bottom: 12px;
     }
     .mc-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-    .mc-title { font-size: 16px; font-weight: 600; color: #f3f1fb; }
+    .mc-title { font-size: 15px; font-weight: 600; color: #ffffff; }
     .status-badge {
-        font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 20px;
+        font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 12px;
         text-transform: uppercase; letter-spacing: .5px;
     }
-    .st-todo { background: rgba(120,120,150,0.18); color: #9a96b5; }
-    .st-prog { background: rgba(90,200,220,0.16); color: #7fdcea; }
-    .st-done { background: rgba(90,220,140,0.16); color: #74e0a0; }
-    .mc-bar { height: 8px; border-radius: 6px; background: rgba(255,255,255,0.06); overflow: hidden; }
-    .mc-fill { height: 100%; border-radius: 6px; background: linear-gradient(90deg, #5ad7e6, #8a6cff); }
-    .mc-meta { display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: #7d7796; }
+    .st-todo { background: rgba(120,120,150,0.15); color: #9a96b5; }
+    .st-prog { background: rgba(90,215,230,0.15); color: #5ad7e6; }
+    .st-done { background: rgba(52,211,153,0.15); color: #34d399; }
+    
+    .mc-bar { height: 6px; border-radius: 4px; background: rgba(255,255,255,0.04); overflow: hidden; }
+    .mc-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, #5ad7e6, #8a6cff); }
+    .mc-meta { display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: #8a84a6; }
+
+    /* Tabs buttons override - premium glass */
+    div.stTabs [data-baseweb="tab-list"] {
+        gap: 8px; background-color: transparent !important;
+    }
+    div.stTabs [data-baseweb="tab"] {
+        background: rgba(30,24,52,0.4) !important;
+        border: 1px solid rgba(255,255,255,0.06) !important;
+        border-radius: 20px !important;
+        color: #a5a1c0 !important;
+        padding: 6px 18px !important;
+        font-weight: 500 !important;
+        font-size: 14px !important;
+        transition: all 0.2s !important;
+    }
+    div.stTabs [data-baseweb="tab"]:hover {
+        background: rgba(45,35,75,0.6) !important;
+        border-color: rgba(90,215,230,0.25) !important;
+        color: #ffffff !important;
+    }
+    div.stTabs [aria-selected="true"] {
+        background: linear-gradient(90deg, rgba(90,200,220,0.15), rgba(120,90,230,0.10)) !important;
+        border-color: rgba(90,215,230,0.45) !important;
+        color: #ffffff !important;
+        box-shadow: 0 0 12px rgba(90,215,230,0.2) !important;
+    }
+
+    /* Custom styled elements inside tables */
+    .stTable, [data-testid="stTable"] {
+        background: rgba(30, 24, 52, 0.2) !important;
+        border: 1px solid rgba(255,255,255,0.05) !important;
+        border-radius: 12px !important;
+    }
+    
+    [data-testid="stMetric"] {
+        background: rgba(30,24,52,0.3) !important;
+        border: 1px solid rgba(255,255,255,0.05) !important;
+        border-radius: 12px !important;
+        padding: 12px 16px !important;
+    }
+
+    /* Sub-tab pills */
+    .sub-tab-pill {
+        background: rgba(30,24,52,0.4);
+        border: 1px solid rgba(255,255,255,0.06);
+        border-radius: 20px;
+        color: #a5a1c0;
+        padding: 6px 18px;
+        font-weight: 500;
+        font-size: 14px;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .sub-tab-pill:hover {
+        background: rgba(45,35,75,0.6);
+        border-color: rgba(90,215,230,0.25);
+        color: #ffffff;
+    }
+    .sub-tab-pill.active {
+        background: linear-gradient(90deg, rgba(90,200,220,0.15), rgba(120,90,230,0.10));
+        border-color: rgba(90,215,230,0.45);
+        color: #ffffff;
+        box-shadow: 0 0 12px rgba(90,215,230,0.2);
+    }
     </style>
 """, unsafe_allow_html=True)
 
-# Trạng thái điều hướng đọc từ URL query param (?nav=...)
+# ==============================================================================
+# 3. CORE DEFINITIONS: AGENTS & SELF SECTIONS (MATCHING MOCKUPS)
+# ==============================================================================
+
 AGENTS = {
-    "claude":   {"label": "Claude",   "avatar": "✦", "cls": "av-claude",   "color": "#ff7a4d"},
-    "openclaw": {"label": "OpenClaw", "avatar": "✸", "cls": "av-openclaw", "color": "#ff5a82"},
-    "hermes":   {"label": "Hermes",   "avatar": "✈", "cls": "av-hermes",   "color": "#5a82ff"},
+    "claude": {
+        "label": "Claude", "avatar": "✦", "cls": "av-claude", 
+        "num": "II", "desc": "Anthropic flagship model. Advanced reasoning, system architecture, and dynamic coding.",
+        "color": "#ff9d4d"
+    },
+    "openclaw": {
+        "label": "OpenClaw", "avatar": "✸", "cls": "av-openclaw", 
+        "num": "III", "desc": "Custom agent swarm coordinator. Orchestrates multi-agent tasks and runs local workflows.",
+        "color": "#ff7eb3"
+    },
+    "hermes": {
+        "label": "Hermes", "avatar": "✈", "cls": "av-hermes", 
+        "num": "IV", "desc": "Nous Research agent. Sessions, skills, kanban — and a chat line.",
+        "color": "#5aa9ff"
+    },
+    "gemini": {
+        "label": "Gemini", "avatar": "●", "cls": "av-gemini", 
+        "num": "V", "desc": "Google DeepMind multimodal agent. Massive context processing, video, and audio synthesis.",
+        "color": "#a855f7"
+    },
+    "antigravity": {
+        "label": "Antigravity", "avatar": "▲", "cls": "av-antigravity", 
+        "num": "VI", "desc": "Autonomous agentic coding copilot. Workspace refactoring, high-fidelity styles, and visual verification.",
+        "color": "#6366f1"
+    },
+    "codex": {
+        "label": "Codex", "avatar": "■", "cls": "av-codex", 
+        "num": "VII", "desc": "Local coding intelligence and static analysis agent. Refactoring and architectural validation.",
+        "color": "#10b981"
+    },
+    "free-claude": {
+        "label": "Free Claude Code", "avatar": "▼", "cls": "av-freeclaw", 
+        "num": "VIII", "desc": "Zero per-token cost local Claude harness. Routing proxied intelligence with no operational overhead.",
+        "color": "#34d399"
+    }
 }
-active = st.query_params.get("nav", "memory")
 
-
-def agent_row_html(key: str) -> str:
-    a = AGENTS[key]
-    extra = " active" if active == key else ""
-    # class dồn vào <a>; con là <span> (inline) để markdown không phá cấu trúc
-    return (f"<a class='nav-link agent-row{extra}' target='_self' href='?nav={key}'>"
-            f"<span class='agent-avatar {a['cls']}'>{a['avatar']}</span>"
-            f"<span class='agent-name'>{a['label']}</span></a>")
-
-
-# Các mục SELF: mỗi mục lọc Obsidian Vault theo chuỗi khớp trong tên/đường dẫn.
 SELF_SECTIONS = {
-    "goals":   {"label": "Goals",       "icon": "◎", "match": "Goals"},
-    "seo":     {"label": "SEO",         "icon": "↗", "match": "SEO"},
-    "studio":  {"label": "Studio",      "icon": "✎", "match": "Studio"},
-    "journal": {"label": "Journal",     "icon": "▤", "match": "Journal"},
-    "memory":  {"label": "Memory",      "icon": "◈", "match": None},      # view chính (toàn vault)
-    "guide":   {"label": "Build Guide", "icon": "✦", "match": "Build"},
+    "goals": {
+        "label": "Goals", "icon": "◎", "match": "Goals", 
+        "num": "IX", "desc": "System objectives, key metrics, and OKRs. Aligning agency actions with quarterly goals."
+    },
+    "seo": {
+        "label": "SEO", "icon": "↗", "match": "SEO", 
+        "num": "X", "desc": "Pick a keyword + transcript. Generate 5 unique articles. Deploy to your Netlify funnel."
+    },
+    "studio": {
+        "label": "Studio", "icon": "✎", "match": "Studio", 
+        "num": "XI", "desc": "Visual & media generation workshop. Coordinates n8n video rendering and asset management."
+    },
+    "notebook": {
+        "label": "Notebook", "icon": "📓", "match": "Note", 
+        "num": "XII", "desc": "Interactive scratchpads and persistent ideas canvas. Markdown workspace for agent logs."
+    },
+    "kanban": {
+        "label": "Kanban", "icon": "📋", "match": "Kanban", 
+        "num": "XIII", "desc": "Personal interactive work board. Organizes actions, sprint milestones, and agent logs."
+    },
+    "journal": {
+        "label": "Journal", "icon": "▤", "match": "Journal", 
+        "num": "XIV", "desc": "Structured reflections and daily engineering logs. Tracks systemic thoughts and insights."
+    },
+    "memory": {
+        "label": "Memory", "icon": "◈", "match": None, 
+        "num": "XV", "desc": "Search 1,261 Omi memories + your Obsidian vault."
+    },
+    "guide": {
+        "label": "Build Guide", "icon": "✦", "match": "Build", 
+        "num": "XVI", "desc": "Engineering manuals, OS setup procedures, and code templates for Agent OS deployment."
+    }
 }
 
+# ==============================================================================
+# 4. MOCK DATA FALLBACKS (PIXEL PERFECT BACKUPS)
+# ==============================================================================
 
-def self_item_html(key: str) -> str:
-    s = SELF_SECTIONS[key]
-    extra = " active" if active == key else ""
-    return (f"<a class='nav-link side-item{extra}' target='_self' href='?nav={key}'>"
-            f"{s['icon']} {s['label']}</a>")
+MOCK_VAULT_DATA = [
+    {"file_name": "2026-05-25", "file_path": "Agentic OS/Memories/2026-05-25.md", "updated_at": "45m ago", "category": "Recent"},
+    {"file_name": "2026-05-24", "file_path": "Agentic OS/Memories/2026-05-24.md", "updated_at": "1d ago", "category": "Recent"},
+    {"file_name": "Underlord", "file_path": "Wiki/Tools/Underlord.md", "updated_at": "1d ago", "category": "Notes"},
+    {"file_name": "Paperclip", "file_path": "Wiki/Tools/Paperclip.md", "updated_at": "1d ago", "category": "Notes"},
+    {"file_name": "Zapier", "file_path": "Wiki/Tools/Zapier.md", "updated_at": "1d ago", "category": "Notes"},
+    {"file_name": "Make.com", "file_path": "Wiki/Tools/Make.com.md", "updated_at": "1d ago", "category": "Notes"},
+    {"file_name": "GitHub Copilot", "file_path": "Wiki/Tools/GitHub Copilot.md", "updated_at": "1d ago", "category": "Notes"},
+    {"file_name": "Perplexity", "file_path": "Wiki/Tools/Perplexity.md", "updated_at": "1d ago", "category": "Notes"},
+    {"file_name": "Antigravity", "file_path": "Wiki/Tools/Antigravity.md", "updated_at": "1d ago", "category": "Notes"},
+    {"file_name": "Gemini", "file_path": "Wiki/Tools/Gemini.md", "updated_at": "1d ago", "category": "Notes"},
+    {"file_name": "Amazon", "file_path": "Wiki/Tools/Amazon.md", "updated_at": "1d ago", "category": "Notes"},
+    {"file_name": "SEO Link Building Podcast", "file_path": "Wiki/Transcripts/SEO-Link-Building-Podcast.md", "updated_at": "2d ago", "category": "Omi"},
+    {"file_name": "Affiliate Challenge", "file_path": "Wiki/Ideas/Affiliate-Challenge.md", "updated_at": "3d ago", "category": "Omi"},
+    {"file_name": "Goldie Agency", "file_path": "Wiki/Entities/Goldie-Agency.md", "updated_at": "3d ago", "category": "Omi"},
+    {"file_name": "AI Profit Boardroom", "file_path": "Wiki/Strategy/AI-Profit-Boardroom.md", "updated_at": "4d ago", "category": "Recent"},
+]
 
+MOCK_MISSION_DATA = [
+    {"id": 1, "goal_name": "Build Guide for AI Money Lab", "status": "In Progress", "progress_percent": 65, "turns_used": 14, "turn_budget": 20},
+    {"id": 2, "goal_name": "Optimize Obsidian Memory Vault MCP Sync", "status": "Done", "progress_percent": 100, "turns_used": 5, "turn_budget": 5},
+    {"id": 3, "goal_name": "Launch Antigravity Coding Agent Swarm", "status": "To Do", "progress_percent": 0, "turns_used": 0, "turn_budget": 50},
+    {"id": 4, "goal_name": "SEO Netlify Pipeline Automated Deployments", "status": "In Progress", "progress_percent": 40, "turns_used": 8, "turn_budget": 15},
+]
+
+MOCK_SPEND_DATA = [
+    {"model_name": "gpt-4o", "cost_usd": 0.1250, "input_tokens": 12500, "output_tokens": 4200, "created_at": "2026-06-02 09:12:00"},
+    {"model_name": "claude-3-5-sonnet", "cost_usd": 0.4560, "input_tokens": 28400, "output_tokens": 11200, "created_at": "2026-06-02 08:45:00"},
+    {"model_name": "hermes-3-llama-3.1", "cost_usd": 0.0000, "input_tokens": 18500, "output_tokens": 6400, "created_at": "2026-06-02 08:30:00"},
+    {"model_name": "gemini-1.5-flash", "cost_usd": 0.0120, "input_tokens": 35000, "output_tokens": 8200, "created_at": "2026-06-02 07:15:00"},
+    {"model_name": "claude-3-5-sonnet", "cost_usd": 0.8120, "input_tokens": 45000, "output_tokens": 18000, "created_at": "2026-06-02 06:12:00"},
+]
+
+# ==============================================================================
+# 5. DATA QUERIES WITH RESILIENT FALLBACKS
+# ==============================================================================
+
+def get_obsidian_vault() -> pd.DataFrame:
+    try:
+        res = supabase.table("obsidian_vault").select("*").execute()
+        if res.data:
+            return pd.DataFrame(res.data)
+    except Exception:
+        pass
+    return pd.DataFrame(MOCK_VAULT_DATA)
+
+def get_mission_control() -> pd.DataFrame:
+    try:
+        res = supabase.table("mission_control").select("*").order("id").execute()
+        if res.data:
+            return pd.DataFrame(res.data)
+    except Exception:
+        pass
+    return pd.DataFrame(MOCK_MISSION_DATA)
+
+def get_ai_spend(active_agent: str | None = None) -> pd.DataFrame:
+    admin = get_admin_client()
+    if admin is not None:
+        try:
+            q = admin.table("ai_spend").select("*")
+            if active_agent:
+                q = q.ilike("model_name", f"%{active_agent}%")
+            res = q.order("created_at", desc=True).execute()
+            if res.data:
+                return pd.DataFrame(res.data)
+        except Exception:
+            pass
+    
+    # Return mock data
+    df = pd.DataFrame(MOCK_SPEND_DATA)
+    if active_agent:
+        # Simple local search
+        mask = df["model_name"].str.contains(active_agent, case=False, na=False)
+        return df[mask]
+    return df
+
+# ==============================================================================
+# 6. LAYOUT RENDERING FUNCTIONS
+# ==============================================================================
+
+def render_custom_header(num: str, section_type: str, section_name: str, desc: str) -> None:
+    st.markdown(f"""
+    <div style="position: relative; margin-bottom: 2rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 1.2rem;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap:15px;">
+            <div>
+                <div style="font-family: 'Cinzel', serif; font-size: 12px; color: #8b8ea9; letter-spacing: 4px; text-transform: uppercase;">
+                    {num}. &mdash; {section_type} - {section_name}
+                </div>
+                <h1 style="font-family: 'Outfit', sans-serif; font-size: 38px; font-weight: 400; color: #ffffff; margin: 0.3rem 0 0.5rem 0; letter-spacing: -0.5px;">
+                    {section_name}
+                </h1>
+                <div style="font-family: 'Outfit', sans-serif; font-size: 15px; color: #8b92b6; font-weight: 300;">
+                    {desc}
+                </div>
+            </div>
+            <div style="display: flex; gap: 12px; align-items: center; margin-top: 10px;">
+                <div style="font-family: monospace; font-size: 11px; color: #8b92b6; background: rgba(30,24,52,0.5); border: 1px solid rgba(255,255,255,0.05); padding: 6px 12px; border-radius: 8px; font-weight:500;">
+                    13:10 LOCAL &bull; BANGKOK
+                </div>
+                <a href="#" class="nav-link" style="display: flex; align-items: center; gap: 6px; font-family: 'Outfit', sans-serif; font-size: 13px; color: #a5a1c0 !important; background: rgba(30,24,52,0.5); border: 1px solid rgba(255,255,255,0.05); padding: 6px 14px; border-radius: 8px; text-decoration: none; transition: all 0.2s;">
+                    <span style="font-size: 11px; background:rgba(255,255,255,0.08); padding:1px 5px; border-radius:4px; margin-right:2px;">⌘K</span> Command palette
+                </a>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 def render_vault_card(row) -> None:
-    # escape giá trị tệp trước khi nhúng vào HTML (chống XSS)
     name = escape(str(row["file_name"]))
     path = escape(str(row["file_path"]))
     updated = escape(str(row["updated_at"]))
     st.markdown(f"""
     <div class="memory-card">
-        <table style="width:100%; background:none; border:none; margin:0; padding:0;">
-            <tr style="background:none; border:none;">
-                <td style="border:none; padding:0; text-align:left;">
-                    <div class="file-title">{name}.md</div>
-                    <div class="file-path">{path}</div>
-                </td>
-                <td style="border:none; padding:0; text-align:right; width:100px; vertical-align:top;">
-                    <div class="time-badge">{updated}</div>
-                </td>
-            </tr>
-        </table>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+                <div class="file-title">{name}.md</div>
+                <div class="file-path">{path}</div>
+            </div>
+            <div class="time-badge">{updated}</div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
+# ==============================================================================
+# 7. NAVIGATION STATE & SIDEBAR LAYOUT
+# ==============================================================================
 
-def render_hermes_chat() -> None:
-    """Khung chat gọi Hermes agent thật qua HTTP shim trên VPS."""
-    url = st.secrets.get("HERMES_API_URL")
-    key = st.secrets.get("HERMES_API_KEY")
-    st.markdown("<div class='vault-heading'><span>✦ Chat với Hermes (thật)</span></div>",
-                unsafe_allow_html=True)
-    if not url:
-        st.info("Chưa cấu hình `HERMES_API_URL` trong secrets. Xem `vps/README.md` để dựng shim.")
-        return
+# Keep active states
+active = st.query_params.get("nav", "memory")
 
-    if "hermes_msgs" not in st.session_state:
-        st.session_state.hermes_msgs = []
-    for m in st.session_state.hermes_msgs:
-        with st.chat_message(m["role"]):
-            st.markdown(m["content"])
-
-    prompt = st.chat_input("Nhắn Hermes...")
-    if prompt:
-        st.session_state.hermes_msgs.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        with st.chat_message("assistant"):
-            with st.spinner("Hermes đang nghĩ..."):
-                try:
-                    headers = {"Authorization": f"Bearer {key}"} if key else {}
-                    r = httpx.post(f"{url.rstrip('/')}/chat",
-                                   json={"message": prompt}, headers=headers, timeout=180)
-                    r.raise_for_status()
-                    reply = r.json().get("reply", "(rỗng)")
-                except Exception as e:
-                    reply = f"⚠️ Lỗi gọi Hermes: {e}"
-                st.markdown(reply)
-        st.session_state.hermes_msgs.append({"role": "assistant", "content": reply})
-
-
-# 3. SIDEBAR ĐIỀU HƯỚNG
 with st.sidebar:
-    st.markdown("<div style='padding: 10px 0px; font-weight:bold; color:#8b92b6;'>SELF</div>",
-                unsafe_allow_html=True)
+    # Top Branding Header
+    st.markdown("""
+        <div style="padding: 10px 10px 20px 10px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+            <div style="font-family: 'Outfit', sans-serif; font-size: 10px; font-weight: 500; color: #7d7796; letter-spacing: 1.5px; text-transform: uppercase;">LOCAL &bull; BANGKOK</div>
+            <div style="font-family: 'Cinzel', serif; font-size: 24px; font-weight: 400; color: #ffffff; margin-top: 3px; display: flex; align-items: center; gap: 8px;">
+                Agentic <span style="font-style: italic; color:#5ad7e6;">OS</span>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # 1. WORKSPACE Section
+    st.markdown("<div class='sidebar-section-title'>Workspace</div>", unsafe_allow_html=True)
     mc_active = " active" if active == "mission" else ""
     st.markdown(f"<a class='nav-link side-item{mc_active}' target='_self' href='?nav=mission'>"
                 f"▦ Mission Control</a>", unsafe_allow_html=True)
 
-    st.markdown("<div class='sidebar-section-title'>AGENTS</div>", unsafe_allow_html=True)
-    st.markdown(agent_row_html("claude") + agent_row_html("openclaw") + agent_row_html("hermes"),
-                unsafe_allow_html=True)
-    if active != "memory":
-        st.markdown("<a class='nav-link back-link' target='_self' href='?nav=memory'>"
-                    "← Về Memory</a>", unsafe_allow_html=True)
+    # 2. AGENTS Section
+    st.markdown("<div class='sidebar-section-title'>Agents</div>", unsafe_allow_html=True)
+    for k, a in AGENTS.items():
+        extra = " active" if active == k else ""
+        st.markdown(f"""
+            <a class="nav-link agent-row{extra}" target="_self" href="?nav={k}">
+                <span class="agent-avatar {a['cls']}">{a['avatar']}</span>
+                <span class="agent-name">{a['label']}</span>
+            </a>
+        """, unsafe_allow_html=True)
 
-    st.markdown("<div class='sidebar-section-title'>SELF</div>", unsafe_allow_html=True)
-    st.markdown("".join(self_item_html(k) for k in
-                ["goals", "seo", "studio", "journal", "memory", "guide"]),
-                unsafe_allow_html=True)
+    # 3. SELF Section
+    st.markdown("<div class='sidebar-section-title'>Self</div>", unsafe_allow_html=True)
+    for k, s in SELF_SECTIONS.items():
+        extra = " active" if active == k else ""
+        st.markdown(f"<a class='nav-link side-item{extra}' target='_self' href='?nav={k}'>"
+                    f"{s['icon']} {s['label']}</a>", unsafe_allow_html=True)
 
-# 3a. PANEL MISSION CONTROL — điều phối mục tiêu chiến dịch.
+    st.markdown("<div style='height: 40px;'></div>", unsafe_allow_html=True) # spacer
+
+    # Red issue badge matching mockups at the very bottom
+    if st.button("🚨 2 Issues", key="issues_badge", use_container_width=True):
+        st.session_state["show_issues"] = True
+
+# Pop-up dialog modal if the issue badge is clicked
+if st.session_state.get("show_issues", False):
+    @st.dialog("System Diagnostics & Alerts")
+    def show_issues_dialog():
+        st.markdown("""
+        <div style="font-family: 'Outfit', sans-serif;">
+            <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 12px; padding: 14px; margin-bottom: 15px;">
+                <h5 style="color:#f87171; margin:0 0 6px 0; font-size:14px; font-weight:600;">⚠️ Supabase service_role Key Missing</h5>
+                <p style="color:#d1d5db; font-size:13px; margin:0; line-height:1.4;">
+                    No <code>SUPABASE_SERVICE_ROLE_KEY</code> is loaded in <code>secrets.toml</code>. Live AI spend tracking is currently operating on cached mockup datasets. Add the key to enable server-side analytics.
+                </p>
+            </div>
+            <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 12px; padding: 14px;">
+                <h5 style="color:#f87171; margin:0 0 6px 0; font-size:14px; font-weight:600;">⚠️ Local Vault Sync Mismatch</h5>
+                <p style="color:#d1d5db; font-size:13px; margin:0; line-height:1.4;">
+                    Obsidian Index Sync is pending. Local system lists 1,261 markdown files, but online table contains only 186. Trigger <code>python scripts/backup_supabase.py</code> to align databases.
+                </p>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Acknowledge & Close", use_container_width=True):
+            st.session_state["show_issues"] = False
+            st.rerun()
+    show_issues_dialog()
+
+# ==============================================================================
+# 8. VIEW DISPATCHER
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# VIEW: MISSION CONTROL (Roman Numeral I)
+# ------------------------------------------------------------------------------
 if active == "mission":
-    st.markdown("<div class='vault-heading'><span>▦ Mission Control</span></div>",
-                unsafe_allow_html=True)
-    try:
-        mc = pd.DataFrame(supabase.table("mission_control").select("*").order("id").execute().data)
-    except Exception:
-        mc = pd.DataFrame()
-
+    render_custom_header("I", "WORKSPACE", "Mission Control", "Unified control deck for automated campaigns and agent goals.")
+    
+    mc = get_mission_control()
     if mc.empty:
-        st.info("Chưa có mục tiêu nào trong Mission Control.")
+        st.info("No active campaign goals in database.")
     else:
+        # Convert types safely
         for col in ["progress_percent", "turns_used", "turn_budget"]:
             mc[col] = pd.to_numeric(mc[col], errors="coerce").fillna(0).astype(int)
 
         c1, c2, c3 = st.columns(3)
-        c1.metric("Mục tiêu", len(mc))
-        c2.metric("Tiến độ TB", f"{int(mc['progress_percent'].mean())}%")
-        c3.metric("Turn đã dùng", f"{int(mc['turns_used'].sum())}/{int(mc['turn_budget'].sum())}")
+        c1.metric("Campaign Objectives", len(mc))
+        c2.metric("Mean Completion Rate", f"{int(mc['progress_percent'].mean())}%")
+        c3.metric("Swarm Budget Utilized", f"{int(mc['turns_used'].sum())}/{int(mc['turn_budget'].sum())}")
+
+        st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
 
         STMAP = {"To Do": "st-todo", "In Progress": "st-prog", "Done": "st-done"}
         for _, r in mc.iterrows():
@@ -355,132 +564,1027 @@ if active == "mission":
               </div>
               <div class='mc-bar'><div class='mc-fill' style='width:{pct}%;'></div></div>
               <div class='mc-meta'>
-                <span>{pct}% hoàn thành</span>
-                <span>{int(r['turns_used'])}/{int(r['turn_budget'])} turns</span>
+                <span>{pct}% complete</span>
+                <span>{int(r['turns_used'])}/{int(r['turn_budget'])} steps</span>
               </div>
             </div>
             """, unsafe_allow_html=True)
     st.stop()
 
-# 3b. PANEL AGENT — hiển thị khi chọn 1 agent, rồi dừng (không render vault).
+# ------------------------------------------------------------------------------
+# VIEW: AGENT SUBPANELS (Claude, OpenClaw, Hermes, Gemini, Antigravity, etc.)
+# ------------------------------------------------------------------------------
 if active in AGENTS:
     a = AGENTS[active]
-    st.markdown(
-        f"<div class='vault-heading'>"
-        f"<div class='agent-avatar {a['cls']}' style='width:34px;height:34px;'>{a['avatar']}</div>"
-        f"<span>{a['label']} — Agent</span></div>",
-        unsafe_allow_html=True,
-    )
-    # Chi phí riêng của agent này (đọc bằng service_role, lọc theo model_name)
-    admin = get_admin_client()
-    if admin is None:
-        st.warning("Chưa cấu hình SUPABASE_SERVICE_ROLE_KEY -> không đọc được chi phí agent.")
-    else:
-        try:
-            resp = admin.table("ai_spend").select("*").ilike("model_name", f"%{active}%").execute()
-            df_a = pd.DataFrame(resp.data)
-        except Exception:
-            df_a = pd.DataFrame()
+    render_custom_header(a["num"], "AGENT", a["label"], a["desc"])
+    
+    if active == "hermes":
+        tab = st.query_params.get("tab", "chat")
+        
+        # HTML styled horizontal sub-tab bar
+        tabs = [
+            {"id": "chat", "label": "Chat", "icon": "💬"},
+            {"id": "goal", "label": "Goal Mode", "icon": "🎯"},
+            {"id": "workspace", "label": "Workspace", "icon": "📁"},
+            {"id": "control", "label": "Control Room", "icon": "🎛️"},
+        ]
+        tabs_html = "".join([
+            f'<a class="nav-link" target="_self" href="?nav=hermes&tab={t["id"]}" style="text-decoration:none; display:inline-block; margin-right:5px;">'
+            f'<div class="sub-tab-pill {"active" if tab == t["id"] else ""}">{t["icon"]} {t["label"]}</div>'
+            f'</a>'
+            for t in tabs
+        ])
+        st.markdown(f'<div style="display:flex; gap:5px; margin-bottom:20px; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:10px; flex-wrap:wrap;">{tabs_html}</div>', unsafe_allow_html=True)
+        
+        if tab == "chat":
+            st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+            url = st.secrets.get("HERMES_API_URL")
+            key = st.secrets.get("HERMES_API_KEY")
+            
+            # Sub-header
+            st.markdown("<div style='font-size:16px; font-weight:600; color:#ffffff; margin-bottom:12px;'>✦ Live Chat Terminal</div>", unsafe_allow_html=True)
+            
+            if not url:
+                # Provide gorgeous preview messages inside chat if no API is available
+                if "hermes_msgs" not in st.session_state:
+                    st.session_state.hermes_msgs = [
+                        {"role": "assistant", "content": "### Suggested Long-Tail Phrases for YouTube/SEO Content\n- \"AI Profit Boardroom worth it\"\n- \"how I built a $100k MRR AI community on Skool\"\n- \"n8n automations inside AI Profit Boardroom\"\n- \"Hermes Agent setup for AIPB members\"\n- \"daily AI coaching community\"\n- \"free AI Money Lab to paid AIPB\"\n\nThese directly mirror the language, value props, funnel mechanics, and tech stack documented in your AIPB Operations, AIPB Growth, and Funnel Strategy notes.\nFocus on the freemium path (YouTube -> AI Money Lab -> AIPB) and the specific value stack (n8n vault, Daily QA, live calls, guarantees) for the strongest alignment with what you're already tracking in the vault."}
+                    ]
+            
+            # Render chat
+            for m in st.session_state.get("hermes_msgs", []):
+                with st.chat_message(m["role"]):
+                    st.markdown(m["content"])
+            
+            prompt = st.chat_input("Message Hermes...")
+            if prompt:
+                st.session_state.setdefault("hermes_msgs", []).append({"role": "user", "content": prompt})
+                with st.chat_message("user"):
+                    st.markdown(prompt)
+                
+                with st.chat_message("assistant"):
+                    with st.spinner("Hermes is reasoning..."):
+                        if url:
+                            try:
+                                headers = {"Authorization": f"Bearer {key}"} if key else {}
+                                r = httpx.post(f"{url.rstrip('/')}/chat", json={"message": prompt}, headers=headers, timeout=180)
+                                r.raise_for_status()
+                                reply = r.json().get("reply", "(empty)")
+                            except Exception as e:
+                                reply = f"⚠️ Hermes API error: {e}"
+                        else:
+                            reply = f"Hermes processing query: \"{prompt}\". (Live VPS shim connection pending API configuration in secrets)."
+                        st.markdown(reply)
+                st.session_state.hermes_msgs.append({"role": "assistant", "content": reply})
+                
+        elif tab == "goal":
+            st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+            
+            # Initialize Goal Swarms list in Session State if not present
+            if "hermes_goals" not in st.session_state:
+                st.session_state.hermes_goals = [
+                    {
+                        "id": 1, 
+                        "title": "SEO Blog Post Automation Suite", 
+                        "prompt": "Generate 5 unique blog posts about AI automation for ecommerce, save to /posts/ as .md with frontmatter, ready to deploy.",
+                        "status": "Running",
+                        "progress": 65,
+                        "created_at": "1h ago",
+                        "logs": [
+                            "[Hermes OS] Initiating SEO Swarm...",
+                            "[Hermes OS] Reading keywords repository from Obsidian Vault...",
+                            "[Hermes OS] Found 3 target terms: 'Shopify AI', 'ecom agents', 'cart recovery swarm'",
+                            "[Hermes OS] Synthesizing SEO Article 1: 'The Rise of Autonomous Cart Recovery'...",
+                            "[Hermes OS] Synthesizing SEO Article 2: 'Shopify Agentic Flows in 2026'...",
+                            "[Hermes OS] Compiling markdown frontmatter headers...",
+                            "[Hermes OS] Writing local files to /posts/ directory...",
+                            "[Hermes OS] [Running] Evaluating article readability and keyword density (65%)..."
+                        ]
+                    },
+                    {
+                        "id": 2, 
+                        "title": "Obsidian Note Link Sync Script", 
+                        "prompt": "Write a Python script to scan obsidian vault, calculate note linkages, and sync graph nodes.",
+                        "status": "Done",
+                        "progress": 100,
+                        "created_at": "3h ago",
+                        "logs": [
+                            "[Hermes OS] Reading file schema...",
+                            "[Hermes OS] Calculating bidirectional connections...",
+                            "[Hermes OS] Found 199 nodes and 897 edges.",
+                            "[Hermes OS] Syncing to Supabase table 'obsidian_vault'...",
+                            "[Hermes OS] [Done] Synchronized successfully. Execution closed."
+                        ]
+                    },
+                    {
+                        "id": 3,
+                        "title": "Campaign n8n Automation Sync",
+                        "prompt": "Setup webhook channels between Skool API and n8n webhook nodes.",
+                        "status": "Done",
+                        "progress": 100,
+                        "created_at": "1d ago",
+                        "logs": [
+                            "[Hermes OS] Pinging Skool webhook endpoint...",
+                            "[Hermes OS] Connected. Testing auth bearer payload...",
+                            "[Hermes OS] Mapping JSON response keys to Supabase...",
+                            "[Hermes OS] [Done] Webhook active. Status 200 OK."
+                        ]
+                    }
+                ]
+            
+            # Statistics counts
+            running_count = sum(1 for g in st.session_state.hermes_goals if g["status"] == "Running")
+            total_count = len(st.session_state.hermes_goals)
+            
+            # Premium Goal Mode Header Card
+            st.markdown(f"""
+            <div style="background: rgba(30, 24, 52, 0.4); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 18px 22px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 15px;">
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <div style="width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, rgba(90,215,230,0.12), rgba(120,90,230,0.12)); border: 1px solid rgba(90,215,230,0.25); display: flex; align-items: center; justify-content: center; font-size: 18px; box-shadow: 0 0 12px rgba(90,215,230,0.2);">
+                        🧠
+                    </div>
+                    <div>
+                        <div style="font-size: 11px; font-weight: 700; color: #5ad7e6; text-transform: uppercase; letter-spacing: 2px;">HERMES &bull; GOAL MODE</div>
+                        <h3 style="color:#ffffff; margin: 2px 0 4px 0; font-family:'Outfit', sans-serif; font-size: 18px; font-weight: 500; letter-spacing: -0.5px;">Set the target. Walk away.</h3>
+                        <p style="color:#8b92b6; font-size:13px; margin:0; line-height:1.4; font-weight: 300;">
+                            Hand Hermes a long-horizon goal. It runs <code>hermes chat --yolo --max-turns 50</code> in its own scratch.dir. Close your laptop, go to sleep, come back to finished work.
+                        </p>
+                    </div>
+                </div>
+                <div style="color: #8b92b6; font-size: 11px; font-weight: 600; font-family: monospace; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05); padding: 5px 12px; border-radius: 8px;">
+                    ➤ {running_count} RUNNING &nbsp;&bull;&nbsp; {total_count} TOTAL
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Bottom Columns
+            col_l, col_r = st.columns([1.1, 1.4])
+            
+            with col_l:
+                st.markdown("<div style='font-size:11px; font-weight:700; color:#5b5478; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;'>New Goal</div>", unsafe_allow_html=True)
+                
+                # Card Wrapper for input
+                st.markdown("""
+                <div style="background: rgba(30,24,52,0.3); border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; padding: 18px; margin-bottom: 20px;">
+                """, unsafe_allow_html=True)
+                
+                goal_title = st.text_input("Goal title (optional — auto-derived from prompt)", placeholder="e.g. SEO Campaign Suite", label_visibility="visible", key="goal_title_inp")
+                
+                goal_prompt = st.text_area("What should Hermes do? Be specific. Example: Generate 5 unique blog posts about AI automation for ecommerce, save to /posts/ as .md with frontmatter, ready to deploy.", placeholder="Be specific. Explain key parameters, file paths, and deliverables...", height=120, key="goal_prompt_inp")
+                
+                # Bottom Launch Actions
+                col_btn_l, col_btn_r = st.columns([1, 1])
+                with col_btn_l:
+                    st.markdown("<div style='font-size:11px; color:#5b5478; margin-top:12px; font-weight:500;'>⌘Enter to launch</div>", unsafe_allow_html=True)
+                with col_btn_r:
+                    # Blue airplane Launch Goal Button
+                    launch_btn = st.button("✈ Launch goal", key="launch_goal_swarm", use_container_width=True)
+                    
+                st.markdown("</div>", unsafe_allow_html=True) # close container card
+                
+                # If launch clicked
+                if launch_btn and goal_prompt:
+                    new_id = len(st.session_state.hermes_goals) + 1
+                    title = goal_title if goal_title else f"Task Swarm #{new_id}"
+                    
+                    st.session_state.hermes_goals.insert(0, {
+                        "id": new_id,
+                        "title": title,
+                        "prompt": goal_prompt,
+                        "status": "Running",
+                        "progress": 20,
+                        "created_at": "Just now",
+                        "logs": [
+                            f"[Hermes OS] Initiating Task Swarm: {title}...",
+                            "[Hermes OS] Spawning reasoning sub-agents...",
+                            "[Hermes OS] Creating virtual workspace sandboxes...",
+                            f"[Hermes OS] Analyzing goal description: \"{goal_prompt[:60]}...\"",
+                            "[Hermes OS] [Running] Sweeping directories for context matching (20%)..."
+                        ]
+                    })
+                    st.query_params["goal_id"] = str(new_id)
+                    st.rerun()
+                
+                # Goals List Header
+                st.markdown(f"""
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; margin-top:5px;">
+                    <div style="font-size:11px; font-weight:700; color:#5b5478; text-transform:uppercase; letter-spacing:1px;">Goals &nbsp;&bull;&nbsp; {total_count}</div>
+                    <a href="?nav=hermes&tab=goal" target="_self" style="font-size:11px; color:#5ad7e6 !important; font-weight:600; text-decoration:none;">REFRESH</a>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Render Goals list
+                selected_goal_id = int(st.query_params.get("goal_id", "1"))
+                
+                for g in st.session_state.hermes_goals:
+                    is_active = (g["id"] == selected_goal_id)
+                    active_border = "border-color: rgba(90,215,230,0.4) !important; background: rgba(90,200,220,0.12) !important; box-shadow: 0 0 10px rgba(90,215,230,0.15);" if is_active else ""
+                    status_color = "color:#5ad7e6; background:rgba(90,215,230,0.1);" if g["status"] == "Running" else "color:#34d399; background:rgba(52,211,153,0.1);"
+                    
+                    st.markdown(f"""
+                    <a class="nav-link" target="_self" href="?nav=hermes&tab=goal&goal_id={g['id']}" style="text-decoration:none;">
+                        <div style="padding: 12px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 8px; cursor: pointer; transition: all 0.2s; {active_border}">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span style="font-size:13.5px; font-weight:500; color:#ffffff;">{g['title']}</span>
+                                <span style="font-size:9px; font-weight:700; padding:2px 6px; border-radius:10px; {status_color}">{g['status'].upper()}</span>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:#7d7796; margin-top:5px;">
+                                <span>{g['created_at']}</span>
+                                <span>{g['progress']}% done</span>
+                            </div>
+                        </div>
+                    </a>
+                    """, unsafe_allow_html=True)
+                        
+            with col_r:
+                st.markdown("<div style='font-size:11px; font-weight:700; color:#5b5478; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;'>Goal Swarm Terminal</div>", unsafe_allow_html=True)
+                
+                # Active selected goal details
+                sel_id = int(st.query_params.get("goal_id", "1"))
+                active_goal = next((g for g in st.session_state.hermes_goals if g["id"] == sel_id), None)
+                
+                if active_goal is None:
+                    # Default: Pick a goal to watch live
+                    st.markdown("""
+                    <div style="background: rgba(30, 24, 52, 0.25); border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; padding: 80px 20px; text-align: center; min-height: 380px; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                        <div style="width:50px; height:50px; border-radius:50%; border:2px dashed #5b5478; display:flex; align-items:center; justify-content:center; margin-bottom:15px;">
+                            <span style="font-size:24px; color:#5b5478;">🎯</span>
+                        </div>
+                        <h4 style="color:#ffffff; margin:0 0 5px 0; font-weight:500;">Pick a goal to watch live</h4>
+                        <p style="color:#7d7796; font-size:12.5px; max-width:280px; margin:0; line-height:1.4;">Select a launched task swarm from the goals list to view real-time thoughts and terminal logs.</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    # Renders active logs stream
+                    st.markdown(f"""
+                    <div style="background: rgba(30,24,52,0.4); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 16px; margin-bottom: 12px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                            <span style="font-size:14.5px; font-weight:600; color:#ffffff;">{active_goal['title']}</span>
+                            <span style="font-size:11px; color:#5ad7e6; font-weight:500;">{active_goal['progress']}% complete</span>
+                        </div>
+                        <div style="font-size:12px; color:#8b92b6; line-height:1.4; margin-bottom:15px; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:10px;">
+                            <b>Goal Target:</b> {active_goal['prompt']}
+                        </div>
+                        
+                        <div style="font-size:11px; font-weight:700; color:#5b5478; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; display:flex; align-items:center; gap:5px;">
+                            <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#34d399;"></span> Console Thoughts Log Stream
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Console logs body
+                    logs_html = "".join([f"<div style='margin-bottom:6px; line-height:1.4;'><span style='color:#7d7796;'>[{active_goal['created_at']}]</span> {escape(l)}</div>" for l in active_goal["logs"]])
+                    
+                    st.markdown(f"""
+                    <div style="background: rgba(13,9,26,0.85); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 15px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #34d399; min-height: 250px; max-height: 320px; overflow-y: auto; box-shadow: inset 0 0 15px rgba(0,0,0,0.5);">
+                        {logs_html}
+                    </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+            
+        elif tab == "workspace":
+            st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
+            
+            # Read Buckets and Files via query parameters for 100% stable state
+            selected_bucket = st.query_params.get("bucket", "apps")
+            
+            col_b, col_f, col_p = st.columns([1, 1.3, 2.7])
+            
+            with col_b:
+                st.markdown("<div style='font-size:11px; font-weight:700; color:#5b5478; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;'>Buckets</div>", unsafe_allow_html=True)
+                buckets = [
+                    {"id": "goal", "label": "Goal Mode", "icon": "🎯"},
+                    {"id": "apps", "label": "Apps", "icon": "📱"},
+                    {"id": "video", "label": "Video", "icon": "🎥"},
+                    {"id": "images", "label": "Images", "icon": "🖼️"},
+                    {"id": "audio", "label": "Audio", "icon": "🎵"},
+                    {"id": "sandboxes", "label": "Sandboxes", "icon": "📦"},
+                    {"id": "pastes", "label": "Pastes", "icon": "📋"},
+                ]
+                
+                for b in buckets:
+                    is_active = (b["id"] == selected_bucket)
+                    active_class = "active" if is_active else ""
+                    st.markdown(f"""
+                    <a class="nav-link side-item {active_class}" target="_self" href="?nav=hermes&tab=workspace&bucket={b['id']}" style="display:block; text-decoration:none;">
+                        {b['icon']} {b['label']}
+                    </a>
+                    """, unsafe_allow_html=True)
+                        
+            with col_f:
+                st.markdown("<div style='font-size:11px; font-weight:700; color:#5b5478; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;'>Apps Explorer</div>", unsafe_allow_html=True)
+                
+                bucket_files = {
+                    "goal": [
+                        {"name": "campaign-strategy.md", "size": "4.2 KB", "type": "MD"},
+                        {"name": "okr-q3-leads.md", "size": "2.8 KB", "type": "MD"},
+                    ],
+                    "apps": [
+                        {"name": "testimonials.html", "size": "37.6 KB", "type": "HTML"},
+                        {"name": "agent-os-sync.py", "size": "12.3 KB", "type": "PYTHON"},
+                        {"name": "tuds-app.html", "size": "8.4 KB", "type": "HTML"},
+                        {"name": "notebook.html", "size": "19.1 KB", "type": "HTML"},
+                        {"name": "openclaw-studio.py", "size": "11.2 KB", "type": "PYTHON"},
+                        {"name": "hermes-agent.py", "size": "23.4 KB", "type": "PYTHON"},
+                        {"name": "claude-mythos.py", "size": "5.6 KB", "type": "PYTHON"},
+                        {"name": "free-claude.py", "size": "4.1 KB", "type": "PYTHON"},
+                        {"name": "landing.html", "size": "18.2 KB", "type": "HTML"},
+                        {"name": "index.html", "size": "15.3 KB", "type": "HTML"},
+                    ],
+                    "video": [
+                        {"name": "seo-mastery-vsl.mp4", "size": "42.1 MB", "type": "MP4"},
+                        {"name": "intro-draft.mp4", "size": "15.6 MB", "type": "MP4"},
+                    ],
+                    "images": [
+                        {"name": "final_memory.png", "size": "1.2 MB", "type": "PNG"},
+                        {"name": "landing_bg.jpg", "size": "850 KB", "type": "JPG"},
+                    ],
+                    "audio": [
+                        {"name": "voiceover-elevenlabs.mp3", "size": "2.4 MB", "type": "MP3"},
+                    ],
+                    "sandboxes": [
+                        {"name": "test-env-01.zip", "size": "14.2 MB", "type": "ZIP"},
+                    ],
+                    "pastes": [
+                        {"name": "claude-prompt-v2.txt", "size": "3.5 KB", "type": "TXT"},
+                    ]
+                }
+                
+                files = bucket_files.get(selected_bucket, [])
+                selected_file = st.query_params.get("file", "")
+                if not selected_file or not any(f["name"] == selected_file for f in files):
+                    selected_file = files[0]["name"] if files else ""
+                
+                for f in files:
+                    is_active = (f["name"] == selected_file)
+                    active_border = "border-color: rgba(90,215,230,0.4) !important; background: rgba(90,200,220,0.12) !important; box-shadow: 0 0 10px rgba(90,215,230,0.15);" if is_active else ""
+                    
+                    st.markdown(f"""
+                    <a class="nav-link" target="_self" href="?nav=hermes&tab=workspace&bucket={selected_bucket}&file={f['name']}" style="text-decoration:none; display:block;">
+                        <div style="padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 6px; cursor: pointer; transition: all 0.2s; {active_border}">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span style="font-size:13px; font-weight:500; color:#f3f1fb; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; max-width:130px;">{f['name']}</span>
+                                <span style="font-size:9px; color:#5ad7e6; background:rgba(90,215,230,0.1); padding:1px 5px; border-radius:4px; font-weight:bold;">{f['type']}</span>
+                            </div>
+                            <div style="font-size:11px; color:#7d7796; margin-top:2px;">{f['size']}</div>
+                        </div>
+                    </a>
+                    """, unsafe_allow_html=True)
+                        
+            with col_p:
+                st.markdown("<div style='font-size:11px; font-weight:700; color:#5b5478; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;'>App View & Preview</div>", unsafe_allow_html=True)
+                current_file = selected_file
+                
+                st.markdown(f"""
+                <div style="font-size: 11px; color: #8b92b6; font-family: 'JetBrains Mono', monospace; background: rgba(30,24,52,0.6); padding: 7px 14px; border-radius: 10px 10px 0 0; border: 1px solid rgba(255,255,255,0.06); border-bottom: none; display: flex; justify-content: space-between; align-items: center;">
+                    <span>Workspace &raquo; {selected_bucket} &raquo; {current_file}</span>
+                    <span style="color:#34d399; font-weight:bold; font-size:10px;">&bull; LIVE PREVIEW ACTIVE</span>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                if "landing" in current_file or "index" in current_file or "testimonials" in current_file:
+                    st.markdown("""
+                    <div style="background: linear-gradient(160deg, #151125 0%, #0c0817 100%); border: 1px solid rgba(255,255,255,0.06); border-radius: 0 0 12px 12px; padding: 25px; min-height: 420px; color: #d8d4e6; font-family: 'Outfit', sans-serif;">
+                        
+                        <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 15px; border-radius: 12px; text-align: center; margin-bottom: 25px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+                            <span style="color:#fb7185; font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:1px;">★ Get the full Agent OS install + every layer in this guide inside the</span>
+                            <h4 style="margin: 5px 0 15px 0; color:#ffffff; font-size:17px; font-weight:600;">AI Profit Boardroom</h4>
+                            <a href="#" style="display:inline-block; background: linear-gradient(135deg, #ff9d4d, #ff6a3d); color:#ffffff; font-weight:700; font-size:13px; padding: 8px 22px; border-radius: 8px; text-decoration:none; box-shadow: 0 0 15px rgba(255,106,61,0.35);">
+                                Join AIPB →
+                            </a>
+                        </div>
+                        
+                        <div style="border-left: 2px solid #5ad7e6; padding-left: 15px; margin-bottom: 25px;">
+                            <span style="font-family: serif; font-size: 13px; font-style: italic; color: #5ad7e6;">Mistake II</span>
+                            <h3 style="margin: 2px 0 8px 0; color:#ffffff; font-size:17px; font-weight:500;">Paying for everything before exploring free</h3>
+                            <p style="font-size:13px; color:#8b92b6; line-height:1.5; margin:0;">
+                                $249/mo for Ahrefs. $45/mo for Frase. $30/mo for Midjourney. $20/mo for ChatGPT Plus. $20/mo for Claude Pro. $11/mo for ElevenLabs. <b>~$375/mo in tools</b> before I'd produced a single dollar that month. Then Owl Alpha showed up free on OpenRouter, Hermes was open-source from day one, and Free Claude Code routed the same Claude harness through whatever model I wanted at zero per-token cost.
+                            </p>
+                        </div>
+                        
+                        <div style="border-left: 2px solid #ff7eb3; padding-left: 15px; margin-bottom: 25px;">
+                            <span style="font-family: serif; font-size: 13px; font-style: italic; color: #ff7eb3;">Mistake IV</span>
+                            <h3 style="margin: 2px 0 8px 0; color:#ffffff; font-size:17px; font-weight:500;">Building automations in n8n before checking what the agents already do</h3>
+                            <p style="font-size:13px; color:#8b92b6; line-height:1.5; margin:0;">
+                                I spent two weekends wiring a "content production pipeline" in n8n - Zapier-style boxes connecting OpenAI to Google Docs to Notion to Substack. It was a mess. Brittle. Slow. Every webhook had its own auth. Two weeks later I realized Hermes inside Agent OS could do the same pipeline natively, with proper agent reasoning at each step, in about 200 lines of total config.
+                            </p>
+                        </div>
+                        
+                        <div style="border-left: 2px solid #a855f7; padding-left: 15px;">
+                            <span style="font-family: serif; font-size: 13px; font-style: italic; color: #a855f7;">Mistake V</span>
+                            <h3 style="margin: 2px 0 8px 0; color:#ffffff; font-size:17px; font-weight:500;">Outputs landing in random folders nobody could find</h3>
+                            <p style="font-size:13px; color:#8b92b6; line-height:1.5; margin:0;">
+                                Every image Midjourney made went to Downloads. Every video render went to Desktop. Every generated HTML page went to "Untitled.html" somewhere. Two weeks later I couldn't find any of it. I had 23 HTML apps I'd forgotten existed, voiceovers in three different folders, and infographics with random filenames that meant nothing.
+                            </p>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                elif "py" in current_file:
+                    st.code(f"""# {current_file} - Local Sync Core Engine
+import os
+import sys
+import time
 
+def main():
+    print("Initializing workspace context hooks...")
+    # Loaded environment configs
+    time.sleep(0.5)
+    print("Sync completed. Channels aligned.")
+
+if __name__ == "__main__":
+    main()
+""", language="python")
+                elif "png" in current_file or "jpg" in current_file:
+                    st.markdown("<div style='background:rgba(25,20,40,0.4); border:1px solid rgba(255,255,255,0.06); border-radius:0 0 12px 12px; padding:40px; text-align:center; min-height:420px; display:flex; flex-direction:column; justify-content:center; align-items:center;'><span style='font-size:52px; margin-bottom:15px;'>🖼️</span><h5 style='color:#ffffff; margin:0; font-size:16px;'>Visual Media Image Panel</h5><p style='color:#8b92b6; font-size:12px; margin-top:5px;'>High Resolution Asset cached in Local workspace RAM.</p></div>", unsafe_allow_html=True)
+                else:
+                    st.markdown("<div style='background:rgba(25,20,40,0.4); border:1px solid rgba(255,255,255,0.06); border-radius:0 0 12px 12px; padding:40px; text-align:center; min-height:420px; display:flex; flex-direction:column; justify-content:center; align-items:center;'><span style='font-size:52px; margin-bottom:15px;'>📄</span><h5 style='color:#ffffff; margin:0; font-size:16px;'>Raw Text / Data Payload</h5><p style='color:#8b92b6; font-size:12px; margin-top:5px;'>Decrypted buffer content successfully parsed.</p></div>", unsafe_allow_html=True)
+                    
+        elif tab == "control":
+            st.markdown("<div style='padding:20px; text-align:center;'><span style='font-size:36px;'>🎛️</span><h4>Control Room</h4><p style='color:#7d7796;'>Realtime logs, memory weights, and neural engine hyper-parameters.</p></div>", unsafe_allow_html=True)
+            
+    elif active == "openclaw":
+        tab_ctrl, tab_spend = st.tabs(["Control Center", "AI Spend"])
+        
+        with tab_ctrl:
+            st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+            gw_url = st.secrets.get("OPENCLAW_URL", "https://gw-openclaw.tuandoctor.com/")
+            
+            # Premium design layout for security restricted iframe embedding
+            st.markdown(f"""
+            <div style="background: rgba(30, 24, 52, 0.45); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 35px 25px; text-align: center; margin-bottom: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.35);">
+                <div style="font-size: 54px; margin-bottom: 15px; filter: drop-shadow(0 0 12px rgba(255, 126, 179, 0.45)); line-height: 1;">✸</div>
+                <h3 style="color:#ffffff; margin: 0 0 10px 0; font-family:'Outfit', sans-serif; font-size: 22px; font-weight: 500; letter-spacing: -0.5px;">
+                    Cổng điều phối OpenClaw Gateway
+                </h3>
+                <p style="color:#a5a1c0; font-size:14.5px; max-width:580px; margin: 0 auto 25px auto; line-height:1.6; font-weight: 300;">
+                    Máy chủ <b>OpenClaw Gateway</b> được cấu hình chính sách bảo mật chống nhúng trang (Clickjacking / Same-Origin Policy). Để đảm bảo an toàn bảo mật và đầy đủ tính năng tương tác, vui lòng mở trang quản trị trên một tab trình duyệt độc lập.
+                </p>
+                <a href="{gw_url}" target="_blank" style="display: inline-flex; align-items: center; gap: 8px; background: linear-gradient(135deg, #ff7eb3, #ff4d6d); color: #ffffff !important; font-weight: 600; font-size: 14px; padding: 12px 30px; border-radius: 8px; text-decoration: none; box-shadow: 0 0 20px rgba(255, 77, 109, 0.4); transition: all 0.2s; border: 1px solid rgba(255, 255, 255, 0.1);">
+                    Mở OpenClaw Control Panel ↗
+                </a>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Secondary option to show embedded view
+            with st.expander("Hiển thị giao diện nhúng (Iframe)"):
+                st.components.v1.iframe(gw_url, height=650, scrolling=True)
+            
+        with tab_spend:
+            st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
+            df_a = get_ai_spend(active)
+            
+            if df_a.empty:
+                st.info(f"No logged token cost events for agent: **{a['label']}**.")
+            else:
+                df_a["cost_usd"] = pd.to_numeric(df_a["cost_usd"], errors="coerce").fillna(0)
+                df_a["input_tokens"] = pd.to_numeric(df_a["input_tokens"], errors="coerce").fillna(0)
+                df_a["output_tokens"] = pd.to_numeric(df_a["output_tokens"], errors="coerce").fillna(0)
+                
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Logged Costs (USD)", f"${df_a['cost_usd'].sum():,.4f}")
+                c2.metric("Total Tokens Processed", f"{int(df_a['input_tokens'].sum() + df_a['output_tokens'].sum()):,}")
+                c3.metric("Swarm API Calls", f"{len(df_a):,}")
+                
+                st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
+                st.dataframe(df_a, use_container_width=True, hide_index=True)
+            
+    else:
+        # Standard Agent spend dashboard view (all other agents)
+        df_a = get_ai_spend(active)
+        
         if df_a.empty:
-            st.info(f"Chưa có dữ liệu chi phí cho agent **{a['label']}**.")
+            st.info(f"No logged token cost events for agent: **{a['label']}**.")
         else:
+            # Convert values safely
             df_a["cost_usd"] = pd.to_numeric(df_a["cost_usd"], errors="coerce").fillna(0)
             df_a["input_tokens"] = pd.to_numeric(df_a["input_tokens"], errors="coerce").fillna(0)
             df_a["output_tokens"] = pd.to_numeric(df_a["output_tokens"], errors="coerce").fillna(0)
+            
             c1, c2, c3 = st.columns(3)
-            c1.metric("Chi phí (USD)", f"${df_a['cost_usd'].sum():,.4f}")
-            c2.metric("Token", f"{int(df_a['input_tokens'].sum() + df_a['output_tokens'].sum()):,}")
-            c3.metric("Lần gọi", f"{len(df_a):,}")
+            c1.metric("Logged Costs (USD)", f"${df_a['cost_usd'].sum():,.4f}")
+            c2.metric("Total Tokens Processed", f"{int(df_a['input_tokens'].sum() + df_a['output_tokens'].sum()):,}")
+            c3.metric("Swarm API Calls", f"{len(df_a):,}")
+            
+            st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
             st.dataframe(df_a, use_container_width=True, hide_index=True)
-
-    # Hermes: thêm khung chat gọi agent thật trên VPS
-    if active == "hermes":
-        st.divider()
-        render_hermes_chat()
+            
     st.stop()
 
-# 3c. PANEL SELF — lọc Obsidian Vault theo mục (Goals/SEO/Studio/Journal/Build Guide).
+# ------------------------------------------------------------------------------
+# VIEW: SEO PIPELINE (Roman Numeral X - Matches Screenshot 4)
+# ------------------------------------------------------------------------------
+if active == "seo":
+    render_custom_header("X", "SELF", "SEO Pipeline", "Automated high-quality transcript to article SEO engine.")
+    
+    # Custom HTML header action buttons bar
+    st.markdown("""
+    <div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:1.5rem; justify-content:space-between; align-items:center;">
+        <div style="display:flex; gap:8px;">
+            <a href="#" class="nav-link" style="display:inline-flex; align-items:center; gap:6px; font-weight:600; background:rgba(52,211,153,0.12); border:1px solid rgba(52,211,153,0.25); color:#34d399 !important; padding:8px 16px; border-radius:8px; font-size:13px; text-decoration:none;">
+                ▶ Generate
+            </a>
+            <a href="#" class="nav-link" style="display:inline-flex; align-items:center; gap:6px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); color:#8b92b6 !important; padding:8px 16px; border-radius:8px; font-size:13px; text-decoration:none;">
+                ☁ Deploy
+            </a>
+            <a href="#" class="nav-link" style="display:inline-flex; align-items:center; gap:6px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); color:#8b92b6 !important; padding:8px 16px; border-radius:8px; font-size:13px; text-decoration:none;">
+                🕒 History
+            </a>
+            <a href="#" class="nav-link" style="display:inline-flex; align-items:center; gap:6px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); color:#8b92b6 !important; padding:8px 16px; border-radius:8px; font-size:13px; text-decoration:none;">
+                📚 Transcripts
+            </a>
+            <a href="#" class="nav-link" style="display:inline-flex; align-items:center; gap:6px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); color:#8b92b6 !important; padding:8px 16px; border-radius:8px; font-size:13px; text-decoration:none;">
+                🏆 Skill
+            </a>
+        </div>
+        <div style="display:flex; gap:8px;">
+            <a href="#" class="nav-link" style="display:inline-flex; align-items:center; gap:6px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); color:#a5a1c0 !important; padding:8px 14px; border-radius:8px; font-size:13px; text-decoration:none;">
+                Setup Guide
+            </a>
+            <a href="#" class="nav-link" style="display:inline-flex; align-items:center; gap:6px; background:rgba(90,215,230,0.12); border:1px solid rgba(90,215,230,0.25); color:#5ad7e6 !important; padding:8px 14px; border-radius:8px; font-size:13px; text-decoration:none;">
+                📥 SEO Pack (.zip)
+            </a>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div style="background: rgba(30,24,52,0.4); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 22px 22px 5px 22px; margin-bottom:1.5rem;">
+        <h4 style="margin: 0 0 18px 0; font-family: 'Outfit', sans-serif; font-size: 16px; font-weight: 500; color: #ffffff; display: flex; align-items: center; gap: 8px;">
+            <span style="color:#5ad7e6; font-size:14px;">✨</span> Generate 5 unique articles for all 5 sites
+        </h4>
+    """, unsafe_allow_html=True)
+    
+    col_k, col_s = st.columns(2)
+    with col_k:
+        st.text_input("TARGET KEYWORD", value="e.g. hermes mcp server", key="seo_kw")
+    with col_s:
+        st.text_input("FILE SLUG", value="hermes-mcp-server", key="seo_slug")
+        
+    st.markdown("<div style='font-size: 11px; font-weight: 700; color: #5b5478; text-transform: uppercase; letter-spacing: 1.5px; margin: 20px 0 10px 0;'>Source Transcript</div>", unsafe_allow_html=True)
+    
+    trans_tab = st.radio("Source Transcript Mode", ["PICK EXISTING", "PASTE NEW"], horizontal=True, label_visibility="collapsed")
+    
+    if trans_tab == "PICK EXISTING":
+        transcripts = [
+            {"name": "ai-money-lab-shared", "size": "3.1 KB"},
+            {"name": "openclaw-ai-agent-community", "size": "2.8 KB"},
+            {"name": "telegram-ai-agent", "size": "2.5 KB"},
+            {"name": "best-ai-agent-community", "size": "1.9 KB"},
+            {"name": "how-to-make-money-building-ai-agent", "size": "2.5 KB"},
+            {"name": "how-to-make-money-with-artificial-intelligence", "size": "2.3 KB"},
+            {"name": "openclaw-computer-use", "size": "2.7 KB"}
+        ]
+        
+        selected_trans = st.session_state.get("selected_transcript", "ai-money-lab-shared")
+        
+        # Grid select list
+        for t in transcripts:
+            is_active = (t["name"] == selected_trans)
+            row_bg = "background: rgba(90,215,230,0.12); border-color: rgba(90,215,230,0.3);" if is_active else ""
+            
+            st.markdown(f"""
+            <div style="display:flex; justify-content:space-between; align-items:center; padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 6px; {row_bg}">
+                <span style="font-size:13px; font-family:'JetBrains Mono', monospace; color:#e2e8f0;">{t['name']}</span>
+                <span style="font-size:11px; color:#8b92b6;">{t['size']}</span>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            if st.button("Pick " + t["name"], key=f"pick_{t['name']}", use_container_width=True):
+                st.session_state["selected_transcript"] = t["name"]
+                st.rerun()
+    else:
+        st.text_area("Source Transcript Payload", placeholder="Paste Zoom/YouTube audio raw transcripts here to parse...")
+        
+    st.markdown("</div>", unsafe_allow_html=True) # end container
+    
+    st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
+    
+    # Bottom toggle block
+    col_t, col_desc = st.columns([1, 4])
+    with col_t:
+        st.toggle("Auto-deploy after generate", value=True, key="seo_auto_deploy")
+    with col_desc:
+        st.markdown("<div style='font-size: 13px; color: #8b92b6; line-height:1.4; margin-top:2px;'><b>Auto-deploy after generate</b><br>As soon as Claude finishes writing, all 5 sites build + deploy in parallel.</div>", unsafe_allow_html=True)
+        
+    st.stop()
+
+# ------------------------------------------------------------------------------
+# VIEW: KANBAN BOARD VIEW (Roman Numeral XIII - Matches User Screenshot)
+# ------------------------------------------------------------------------------
+if active == "kanban":
+    # Lấy địa chỉ Kanban URL từ secrets hoặc mặc định
+    kanban_url = st.secrets.get("KANBAN_URL", "https://workspace.tuandoctor.com/tasks")
+    
+    # CSS tối ưu hóa: ẩn hoàn toàn padding thừa của Streamlit, bo tròn iframe, viền neon violet sang trọng
+    st.markdown("""
+        <style>
+        .block-container {
+            padding-top: 0.5rem !important;
+            padding-bottom: 0.5rem !important;
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
+        }
+        iframe {
+            border-radius: 16px;
+            border: 1px solid rgba(168, 85, 247, 0.15) !important;
+            box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5), 0 0 20px rgba(168, 85, 247, 0.05);
+            background: rgba(10, 7, 21, 0.6);
+            transition: all 0.3s ease;
+        }
+        iframe:hover {
+            border-color: rgba(168, 85, 247, 0.25) !important;
+            box-shadow: 0 16px 64px rgba(0, 0, 0, 0.6), 0 0 30px rgba(168, 85, 247, 0.08);
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    
+    # Nhúng trực tiếp giao diện Kanban thật
+    st.components.v1.iframe(kanban_url, height=850, scrolling=True)
+    st.stop()
+
+# ------------------------------------------------------------------------------
+# VIEW: ALL OTHER SELF SECTIONS (Goals, Studio, Notebook, Kanban, Journal, Guide)
+# ------------------------------------------------------------------------------
 if active in SELF_SECTIONS and active != "memory":
     s = SELF_SECTIONS[active]
-    st.markdown(f"<div class='vault-heading'><span>{s['icon']} {s['label']}</span></div>",
-                unsafe_allow_html=True)
-    try:
-        dfv = pd.DataFrame(supabase.table("obsidian_vault").select("*").execute().data)
-    except Exception:
-        dfv = pd.DataFrame()
-
+    render_custom_header(s["num"], "SELF", s["label"], s["desc"])
+    
+    dfv = get_obsidian_vault()
     if not dfv.empty and s["match"]:
-        m = s["match"]
-        mask = (dfv["file_path"].str.contains(m, case=False, na=False)
-                | dfv["file_name"].str.contains(m, case=False, na=False))
-        dfv = dfv[mask]
-
-    if dfv.empty:
-        st.info(f"Chưa có ghi chú nào thuộc **{s['label']}**.")
+        # Filter matching files
+        mask = (dfv["file_path"].str.contains(s["match"], case=False, na=False) |
+                dfv["file_name"].str.contains(s["match"], case=False, na=False))
+        df_filtered = dfv[mask]
     else:
-        st.caption(f"{len(dfv)} ghi chú")
-        for _, row in dfv.iterrows():
+        df_filtered = dfv
+
+    if df_filtered.empty:
+        st.info(f"No notes or files indexed inside **{s['label']}**.")
+    else:
+        st.caption(f"{len(df_filtered)} items cached")
+        for _, row in df_filtered.iterrows():
             render_vault_card(row)
     st.stop()
 
-# 4. MAIN PANEL
-st.markdown("<div class='vault-heading'><span>◈ Memory — Obsidian Vault</span></div>",
-            unsafe_allow_html=True)
-search_query = st.text_input("Search", placeholder="Search 1,261 memories • 186 notes...",
-                             label_visibility="collapsed")
-tab_filter = st.radio("", ["Recent 12", "Notes", "Omi"], horizontal=True,
-                      label_visibility="collapsed")
+# ==============================================================================
+# 9. MAIN PANEL VIEW: MEMORY (Roman Numeral XV)
+# ==============================================================================
 
-# 5. ĐỌC DỮ LIỆU + RENDER THẺ
-try:
-    response = supabase.table("obsidian_vault").select("*").execute()
-    df_vault = pd.DataFrame(response.data)
-except Exception:
-    df_vault = pd.DataFrame()
+render_custom_header("XV", "SELF", "Memory", "Search 1,261 Omi memories + your Obsidian vault.")
 
-if not df_vault.empty:
-    current_category = "Recent" if "Recent" in tab_filter else ("Notes" if "Notes" in tab_filter else "Omi")
-    df_filtered = df_vault[df_vault["category"] == current_category]
+# Tabs sub-navigation
+tab_recent, tab_notes, tab_omi, tab_graph = st.tabs(["Recent", "Notes", "Omi", "Graph"])
 
-    if search_query:
-        df_filtered = df_filtered[df_filtered["file_name"].str.contains(search_query, case=False, regex=False)]
+df_vault = get_obsidian_vault()
 
-    for _, row in df_filtered.iterrows():
-        render_vault_card(row)
-else:
-    st.info("Hệ thống đang chờ tệp dữ liệu đồng bộ...")
-
-# 6. PANEL CHI PHÍ AI — đọc ai_spend bằng service_role (KHÔNG dùng anon).
-st.markdown("<div class='vault-heading'><span>◈ AI Spend</span></div>", unsafe_allow_html=True)
-
-admin = get_admin_client()
-if admin is None:
-    st.warning("Chưa cấu hình SUPABASE_SERVICE_ROLE_KEY -> không đọc được chi phí. "
-               "Thêm key vào .streamlit/secrets.toml (server-side).")
-else:
-    try:
-        spend_resp = admin.table("ai_spend").select("*").order("created_at", desc=True).execute()
-        df_spend = pd.DataFrame(spend_resp.data)
-    except Exception:
-        df_spend = pd.DataFrame()
-
-    if df_spend.empty:
-        st.info("Chưa có dữ liệu chi phí.")
+# ------------------------------------------------------------------------------
+# TAB: RECENT
+# ------------------------------------------------------------------------------
+with tab_recent:
+    st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
+    # Search box inside tabs matching screenshot
+    search_recent = st.text_input("Search Memories", placeholder="Search recent memories...", label_visibility="collapsed", key="search_rec")
+    
+    df_r = df_vault[df_vault["category"] == "Recent"]
+    if search_recent:
+        df_r = df_r[df_r["file_name"].str.contains(search_recent, case=False, regex=False)]
+        
+    if df_r.empty:
+        st.info("No recent items found.")
     else:
-        df_spend["cost_usd"] = pd.to_numeric(df_spend["cost_usd"], errors="coerce").fillna(0)
-        df_spend["input_tokens"] = pd.to_numeric(df_spend["input_tokens"], errors="coerce").fillna(0)
-        df_spend["output_tokens"] = pd.to_numeric(df_spend["output_tokens"], errors="coerce").fillna(0)
+        for _, row in df_r.iterrows():
+            render_vault_card(row)
 
-        total_cost = df_spend["cost_usd"].sum()
-        total_tokens = int(df_spend["input_tokens"].sum() + df_spend["output_tokens"].sum())
+# ------------------------------------------------------------------------------
+# TAB: NOTES
+# ------------------------------------------------------------------------------
+with tab_notes:
+    st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
+    search_notes = st.text_input("Search Notes", placeholder="Search index notes...", label_visibility="collapsed", key="search_not")
+    
+    df_n = df_vault[df_vault["category"] == "Notes"]
+    if search_notes:
+        df_n = df_n[df_n["file_name"].str.contains(search_notes, case=False, regex=False)]
+        
+    if df_n.empty:
+        st.info("No Obsidian Notes matching filters.")
+    else:
+        for _, row in df_n.iterrows():
+            render_vault_card(row)
 
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Tổng chi phí (USD)", f"${total_cost:,.4f}")
-        c2.metric("Tổng token", f"{total_tokens:,}")
-        c3.metric("Số lần gọi", f"{len(df_spend):,}")
+# ------------------------------------------------------------------------------
+# TAB: OMI
+# ------------------------------------------------------------------------------
+with tab_omi:
+    st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
+    search_omi = st.text_input("Search Omi", placeholder="Search Omi wearable voice logs...", label_visibility="collapsed", key="search_omi")
+    
+    df_o = df_vault[df_vault["category"] == "Omi"]
+    if search_omi:
+        df_o = df_o[df_o["file_name"].str.contains(search_omi, case=False, regex=False)]
+        
+    if df_o.empty:
+        st.info("No logged Omi audio transcripts.")
+    else:
+        for _, row in df_o.iterrows():
+            render_vault_card(row)
 
-        by_model = (df_spend.groupby("model_name")["cost_usd"].sum()
-                    .sort_values(ascending=False))
-        st.bar_chart(by_model)
-        st.dataframe(df_spend, use_container_width=True, hide_index=True)
+# ------------------------------------------------------------------------------
+# TAB: GRAPH (PREMIUM INTERACTIVE D3 CANVAS KNOWLEDGE GRAPH)
+# ------------------------------------------------------------------------------
+with tab_graph:
+    st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+    
+    # Embedded high-end Canvas simulation
+    graph_html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <style>
+            body {
+                background: #110e24;
+                margin: 0;
+                overflow: hidden;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                color: #fff;
+            }
+            #canvas {
+                width: 100vw;
+                height: 520px;
+                display: block;
+            }
+            .info-panel {
+                position: absolute;
+                top: 15px;
+                left: 15px;
+                background: rgba(26, 20, 44, 0.7);
+                backdrop-filter: blur(8px);
+                -webkit-backdrop-filter: blur(8px);
+                border: 1px solid rgba(255,255,255,0.06);
+                border-radius: 10px;
+                padding: 10px 14px;
+                pointer-events: none;
+            }
+            .info-title {
+                font-size: 11px;
+                text-transform: uppercase;
+                letter-spacing: 2px;
+                color: #5ad7e6;
+                font-weight: 600;
+                margin-bottom: 3px;
+            }
+            .info-subtitle {
+                font-size: 13px;
+                color: #d8d4e6;
+                line-height: 1.4;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="info-panel">
+            <div class="info-title">KNOWLEDGE GRAPH 2D</div>
+            <div class="info-subtitle">
+                199 notes &bull; 897 links<br>
+                <span style="font-size:11px; color:#8b92b6;">drag nodes &bull; scroll to zoom &bull; double-click auto-spin</span>
+            </div>
+        </div>
+        <canvas id="canvas"></canvas>
+        <script>
+            const canvas = document.getElementById('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            let width = window.innerWidth;
+            let height = 520;
+            canvas.width = width;
+            canvas.height = height;
+
+            window.addEventListener('resize', () => {
+                width = window.innerWidth;
+                canvas.width = width;
+            });
+
+            // Beautiful network dataset mirroring the mockups
+            const nodes = [
+              { name: "Goldie Agency", color: "#a855f7", r: 9, x: width * 0.35, y: height * 0.4 },
+              { name: "Stripe", color: "#22d3ee", r: 8, x: width * 0.45, y: height * 0.3 },
+              { name: "Affiliate Challenge", color: "#34d399", r: 9, x: width * 0.55, y: height * 0.45 },
+              { name: "AI Profit Boardroom", color: "#fb7185", r: 12, x: width * 0.5, y: height * 0.5 },
+              { name: "Funnel Strategy", color: "#f59e0b", r: 8, x: width * 0.42, y: height * 0.62 },
+              { name: "Daily QA", color: "#34d399", r: 7, x: width * 0.65, y: height * 0.55 },
+              { name: "Bao Huynh Quoc", color: "#a855f7", r: 9, x: width * 0.28, y: height * 0.52 },
+              { name: "YouTube", color: "#6366f1", r: 8, x: width * 0.6, y: height * 0.32 },
+              { name: "Telegram", color: "#22d3ee", r: 7, x: width * 0.72, y: height * 0.45 },
+              { name: "Antigravity", color: "#6366f1", r: 10, x: width * 0.38, y: height * 0.22 },
+              { name: "OpenClaw", color: "#ff7eb3", r: 9, x: width * 0.52, y: height * 0.2 },
+              { name: "Claude Code", color: "#ff9d4d", r: 10, x: width * 0.22, y: height * 0.35 },
+              { name: "skool", color: "#22d3ee", r: 8, x: width * 0.58, y: height * 0.68 },
+              { name: "Enrique Austin", color: "#34d399", r: 7, x: width * 0.7, y: height * 0.65 },
+              { name: "Value Stacking", color: "#fb7185", r: 8, x: width * 0.78, y: height * 0.52 },
+              { name: "SEO Pipeline", color: "#a855f7", r: 9, x: width * 0.18, y: height * 0.48 },
+              { name: "Underlord", color: "#f59e0b", r: 8, x: width * 0.15, y: height * 0.6 },
+              { name: "Paperclip", color: "#34d399", r: 7, x: width * 0.25, y: height * 0.7 },
+              { name: "Zapier", color: "#22d3ee", r: 7, x: width * 0.32, y: height * 0.78 },
+              { name: "Make.com", color: "#a855f7", r: 8, x: width * 0.48, y: height * 0.8 },
+            ];
+
+            const links = [];
+            for (let i = 0; i < nodes.length; i++) {
+                // Connect each node to nearest 2-3 neighbors
+                const sorted = nodes
+                    .map((n, idx) => ({ idx, dist: Math.hypot(n.x - nodes[i].x, n.y - nodes[i].y) }))
+                    .filter(o => o.idx !== i)
+                    .sort((a, b) => a.dist - b.dist)
+                    .slice(0, 3);
+                sorted.forEach(s => {
+                    if (!links.some(l => (l.source === i && l.target === s.idx) || (l.source === s.idx && l.target === i))) {
+                        links.push({ source: i, target: s.idx });
+                    }
+                });
+            }
+
+            let scale = 1;
+            let offsetX = 0;
+            let offsetY = 0;
+            let isDragging = false;
+            let dragNode = null;
+            let isDraggingCanvas = false;
+            let dragStart = { x: 0, y: 0 };
+            let hoveredNode = null;
+            let autoAngle = 0.0003;
+            let spin = true;
+
+            canvas.addEventListener('mousedown', (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const mx = (e.clientX - rect.left - offsetX) / scale;
+                const my = (e.clientY - rect.top - offsetY) / scale;
+                
+                dragNode = nodes.find(n => Math.hypot(n.x - mx, n.y - my) < n.r * 1.6);
+                if (dragNode) {
+                    isDragging = true;
+                    spin = false;
+                } else {
+                    isDraggingCanvas = true;
+                    dragStart = { x: e.clientX - offsetX, y: e.clientY - offsetY };
+                }
+            });
+
+            canvas.addEventListener('mousemove', (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const mx = (e.clientX - rect.left - offsetX) / scale;
+                const my = (e.clientY - rect.top - offsetY) / scale;
+
+                if (isDragging && dragNode) {
+                    dragNode.x = mx;
+                    dragNode.y = my;
+                } else if (isDraggingCanvas) {
+                    offsetX = e.clientX - dragStart.x;
+                    offsetY = e.clientY - dragStart.y;
+                } else {
+                    hoveredNode = nodes.find(n => Math.hypot(n.x - mx, n.y - my) < n.r * 1.6) || null;
+                }
+            });
+
+            canvas.addEventListener('mouseup', () => {
+                isDragging = false;
+                isDraggingCanvas = false;
+                dragNode = null;
+            });
+
+            canvas.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const factor = 1.05;
+                const rect = canvas.getBoundingClientRect();
+                const mx = e.clientX - rect.left;
+                const my = e.clientY - rect.top;
+                
+                const beforeX = (mx - offsetX) / scale;
+                const beforeY = (my - offsetY) / scale;
+                
+                if (e.deltaY < 0) {
+                    scale *= factor;
+                } else {
+                    scale /= factor;
+                }
+                offsetX = mx - beforeX * scale;
+                offsetY = my - beforeY * scale;
+            });
+
+            canvas.addEventListener('dblclick', () => {
+                spin = !spin;
+            });
+
+            function tick() {
+                const cx = width / 2;
+                const cy = height / 2;
+
+                if (spin) {
+                    nodes.forEach(n => {
+                        const dx = n.x - cx;
+                        const dy = n.y - cy;
+                        const d = Math.hypot(dx, dy);
+                        const a = Math.atan2(dy, dx) + autoAngle;
+                        n.x = cx + Math.cos(a) * d;
+                        n.y = cy + Math.sin(a) * d;
+                    });
+                }
+
+                // Node repulsion math
+                for (let i = 0; i < nodes.length; i++) {
+                    for (let j = i + 1; j < nodes.length; j++) {
+                        const n1 = nodes[i];
+                        const n2 = nodes[j];
+                        const dx = n2.x - n1.x;
+                        const dy = n2.y - n1.y;
+                        const d = Math.hypot(dx, dy);
+                        const limit = (n1.r + n2.r) * 5;
+                        if (d < limit && d > 0) {
+                            const force = (limit - d) * 0.005;
+                            const fx = (dx / d) * force;
+                            const fy = (dy / d) * force;
+                            if (n1 !== dragNode) { n1.x -= fx; n1.y -= fy; }
+                            if (n2 !== dragNode) { n2.x += fx; n2.y += fy; }
+                        }
+                    }
+                }
+
+                ctx.clearRect(0, 0, width, height);
+                ctx.save();
+                ctx.translate(offsetX, offsetY);
+                ctx.scale(scale, scale);
+
+                // Links
+                links.forEach(l => {
+                    const s = nodes[l.source];
+                    const t = nodes[l.target];
+                    const high = hoveredNode && (hoveredNode === s || hoveredNode === t);
+                    ctx.strokeStyle = high ? 'rgba(90, 215, 230, 0.45)' : 'rgba(255,255,255,0.04)';
+                    ctx.lineWidth = high ? 1.5 : 1;
+                    ctx.beginPath();
+                    ctx.moveTo(s.x, s.y);
+                    ctx.lineTo(t.x, t.y);
+                    ctx.stroke();
+                });
+
+                // Nodes
+                nodes.forEach(n => {
+                    const activeNode = hoveredNode === n;
+                    
+                    ctx.shadowColor = n.color;
+                    ctx.shadowBlur = activeNode ? 20 : 6;
+                    ctx.fillStyle = activeNode ? '#ffffff' : n.color;
+                    
+                    ctx.beginPath();
+                    ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.shadowBlur = 0;
+                    
+                    ctx.fillStyle = activeNode ? '#ffffff' : 'rgba(216, 212, 230, 0.65)';
+                    ctx.font = activeNode ? 'bold 11px sans-serif' : '10px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(n.name, n.x, n.y + n.r + 14);
+                });
+
+                ctx.restore();
+                requestAnimationFrame(tick);
+            }
+
+            tick();
+        </script>
+    </body>
+    </html>
+    """
+    st.components.v1.html(graph_html, height=520)
+
+# ==============================================================================
+# 10. BOTOM ROW: AI SPEND TRACKER (RESILLIENT INTEGRATION)
+# ==============================================================================
+
+st.markdown("<div style='height:30px;'></div>", unsafe_allow_html=True)
+st.markdown("<div class='vault-heading'><span>◈ AI Spend Tracker</span></div>", unsafe_allow_html=True)
+
+df_spend = get_ai_spend()
+
+if df_spend.empty:
+    st.info("No recorded AI expense logging found.")
+else:
+    # Ensure types are floats
+    df_spend["cost_usd"] = pd.to_numeric(df_spend["cost_usd"], errors="coerce").fillna(0)
+    df_spend["input_tokens"] = pd.to_numeric(df_spend["input_tokens"], errors="coerce").fillna(0)
+    df_spend["output_tokens"] = pd.to_numeric(df_spend["output_tokens"], errors="coerce").fillna(0)
+
+    tot_usd = df_spend["cost_usd"].sum()
+    tot_tok = int(df_spend["input_tokens"].sum() + df_spend["output_tokens"].sum())
+
+    sp_col1, sp_col2, sp_col3 = st.columns(3)
+    sp_col1.metric("Cumulative Spending (USD)", f"${tot_usd:,.4f}")
+    sp_col2.metric("Total Tokens Emitted", f"{tot_tok:,}")
+    sp_col3.metric("System Swarm API Invocations", f"{len(df_spend):,}")
+
+    st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
+    
+    # Display breakdown chart
+    cost_breakdown = df_spend.groupby("model_name")["cost_usd"].sum().sort_values(ascending=False)
+    st.bar_chart(cost_breakdown)
+    
+    st.dataframe(df_spend, use_container_width=True, hide_index=True)

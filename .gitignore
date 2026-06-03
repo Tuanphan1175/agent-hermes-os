@@ -26,3 +26,7 @@ vps/*.env
 # Live verify screenshots (artifact)
 /live_*.png
 shot_hermes_chat.png
+
+# Local scratch directories
+scratch/
+

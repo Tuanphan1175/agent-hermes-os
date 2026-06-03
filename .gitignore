@@ -12,6 +12,7 @@ venv/
 # Artifact runtime (không commit)
 streamlit.log
 shot_*.png
+scripts/sync-log.txt
 
 # Claude local config
 .claude/settings.local.json

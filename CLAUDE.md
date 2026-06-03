@@ -17,7 +17,11 @@ python shoot.py                                 # Playwright screenshots of the 
 
 python scripts/backup_supabase.py               # export 3 tables -> backups/*.json (needs env, see below)
 python scripts/sync_obsidian.py --vault PATH    # sync local Obsidian vault -> obsidian_vault table (needs env; --dry-run to preview)
+python scripts/run_sync.py                       # same sync, reads creds + OBSIDIAN_VAULT_PATH from .streamlit/secrets.toml
+python scripts/install_task.py                   # register Windows Task Scheduler job (runs sync_obsidian.bat every 6h); --remove to delete
 ```
+
+**Obsidian → Supabase sync.** `sync_obsidian.py` mirrors a local Obsidian vault into `obsidian_vault` (full delete+insert), deriving Recent/Notes/Omi categories and parsing `[[wikilinks]]` into the `links jsonb` column that drives the Memory graph. The vault is local-only, so automation is local (not GitHub Actions — a cloud runner can't read the vault): `run_sync.py` loads creds + `OBSIDIAN_VAULT_PATH` from `secrets.toml`, `sync_obsidian.bat` wraps it with logging to `scripts/sync-log.txt`, and `install_task.py` registers a Task Scheduler job that runs it every 6h.
 
 There is **no test suite, linter, or build step.** Verification is visual: run the app or `shoot.py`.
 

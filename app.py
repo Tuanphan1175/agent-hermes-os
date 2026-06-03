@@ -1832,7 +1832,71 @@ if active == "journal":
     st.stop()
 
 # ------------------------------------------------------------------------------
-# VIEW: ALL OTHER SELF SECTIONS (Guide)
+# VIEW: BUILD GUIDE (Roman Numeral XVI) — hướng dẫn deploy Agent OS thật
+# ------------------------------------------------------------------------------
+if active == "guide":
+    gd = SELF_SECTIONS["guide"]
+    render_custom_header(gd["num"], "SELF", gd["label"], gd["desc"])
+
+    st.markdown("""
+    <div style="background: rgba(30,24,52,0.45); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border:1px solid rgba(168,85,247,0.12); border-radius:14px; padding:22px 24px; margin-bottom:8px; box-shadow:0 8px 32px rgba(0,0,0,0.35);">
+      <div style="color:#fff; font-weight:600; font-size:17px; margin-bottom:6px;">🚀 Triển khai Agent OS từ con số 0</div>
+      <div style="color:#a5a1c0; font-size:13.5px; line-height:1.65; font-weight:300;">
+        Dashboard Streamlit này chạy trên Supabase. Làm theo 7 bước dưới đây để dựng lại toàn bộ hệ thống — từ secrets, schema, đồng bộ Obsidian, tới deploy lên Streamlit Community Cloud.
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    GUIDE_STEPS = [
+        {"title": "Cấu hình secrets", "lang": "bash",
+         "desc": "Copy file mẫu rồi điền Supabase URL/keys (và tuỳ chọn Hermes, đường dẫn vault).",
+         "code": "cp .streamlit/secrets.toml.example .streamlit/secrets.toml",
+         "note": "Bắt buộc: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`. Không bao giờ commit `secrets.toml` (đã gitignore)."},
+        {"title": "Tạo schema Supabase", "lang": None,
+         "desc": "Mở Supabase SQL Editor, dán toàn bộ security/00_full_setup.sql rồi Run — tạo bảng + seed + RLS.",
+         "code": None,
+         "note": "⚠️ File `DROP` các bảng trước khi tạo lại → chạy lại sẽ **xoá sạch dữ liệu**. Chỉ chạy 1 lần khi setup."},
+        {"title": "Cài deps & chạy local", "lang": "bash",
+         "desc": "Cài thư viện runtime và mở dashboard ở localhost.",
+         "code": "pip install -r requirements.txt\nstreamlit run app.py",
+         "note": "Dashboard chạy tại http://localhost:8501"},
+        {"title": "Đồng bộ vault Obsidian", "lang": "bash",
+         "desc": "Đẩy ghi chú + [[wikilink]] từ vault local lên bảng obsidian_vault (xem trước bằng --dry-run).",
+         "code": "python scripts/sync_obsidian.py --vault PATH --dry-run\npython scripts/sync_obsidian.py --vault PATH",
+         "note": "Tự động hoá (Windows): `python scripts/install_task.py` đăng ký Task Scheduler chạy mỗi 6 giờ."},
+        {"title": "Verify trực quan", "lang": "bash",
+         "desc": "Không có test suite — kiểm tra bằng screenshot Playwright.",
+         "code": "pip install -r requirements-dev.txt && playwright install chromium\npython shoot.py",
+         "note": None},
+        {"title": "Deploy lên Streamlit Cloud", "lang": "bash",
+         "desc": "Push lên main → Streamlit Community Cloud tự build. Đặt lại các secret ở Settings → Secrets.",
+         "code": "git push origin main",
+         "note": "⚠️ Vercel KHÔNG chạy được (Streamlit cần server + websocket). Phải dùng Streamlit Community Cloud."},
+        {"title": "Backup tự động", "lang": None,
+         "desc": "Workflow .github/workflows/daily-backup.yml export 3 bảng ra backups/*.json hằng ngày (00:00 giờ VN).",
+         "code": None,
+         "note": "Cần `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` trong GitHub Actions secrets."},
+    ]
+
+    for i, step in enumerate(GUIDE_STEPS, start=1):
+        st.markdown(f"""
+        <div style="display:flex; align-items:center; gap:12px; margin:26px 0 6px 0;">
+          <div style="min-width:30px; height:30px; border-radius:9px; background:linear-gradient(135deg,#a855f7,#7c3aed); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:14px; box-shadow:0 0 14px rgba(168,85,247,0.4);">{i}</div>
+          <div style="color:#fff; font-weight:600; font-size:17px;">{escape(step['title'])}</div>
+        </div>
+        <div style="color:#a5a1c0; font-size:13.5px; margin:0 0 8px 42px; line-height:1.6; font-weight:300;">{escape(step['desc'])}</div>
+        """, unsafe_allow_html=True)
+        if step["code"]:
+            st.code(step["code"], language=step["lang"])
+        if step["note"]:
+            st.caption(step["note"])
+
+    st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
+    st.caption("Tài liệu đầy đủ: CLAUDE.md (kiến trúc, secrets, deploy) và docs/ trong repo.")
+    st.stop()
+
+# ------------------------------------------------------------------------------
+# VIEW: ALL OTHER SELF SECTIONS (fallback cho SELF section chưa có view riêng)
 # ------------------------------------------------------------------------------
 if active in SELF_SECTIONS and active != "memory":
     s = SELF_SECTIONS[active]

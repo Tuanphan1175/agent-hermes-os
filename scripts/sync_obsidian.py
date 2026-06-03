@@ -1,9 +1,13 @@
 """Đồng bộ vault Obsidian (local) -> bảng Supabase obsidian_vault.
 
-Quét toàn bộ file .md trong vault, suy ra category theo folder, rồi ghi đè
+Quét toàn bộ file .md trong vault, suy ra category theo folder, parse các
+liên kết [[wikilink]] (resolve theo tên file) thành cột `links`, rồi ghi đè
 toàn bộ bảng obsidian_vault (full re-sync: xóa sạch -> insert lại) để bảng
-là bản phản chiếu trung thực của vault. Tabs Recent/Notes/Omi trên dashboard
-sẽ hiển thị đúng ghi chú thật sau khi chạy.
+là bản phản chiếu trung thực của vault. Tabs Recent/Notes/Omi và knowledge
+graph trên dashboard sẽ phản ánh đúng ghi chú + liên kết thật sau khi chạy.
+
+Lưu ý: cột `links jsonb` phải tồn tại trên obsidian_vault trước khi sync
+(xem security/00_full_setup.sql). Nếu chưa có, sync ghi links sẽ lỗi.
 
 Đọc cấu hình từ biến môi trường (KHÔNG hardcode key):
   SUPABASE_URL
@@ -16,6 +20,7 @@ Dùng:
 """
 import argparse
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -42,6 +47,9 @@ RECENT_COUNT = 15
 # Bỏ qua các folder hệ thống/không phải nội dung.
 IGNORE_DIRS = {".obsidian", ".trash", ".git"}
 
+# [[Note]] | [[folder/Note.md]] | [[Note|alias]] | [[Note#heading]] | ![[Note]]
+WIKILINK_RX = re.compile(r"\[\[([^\]]+)\]\]")
+
 
 def derive_category(rel_path: Path) -> str:
     parts = [p.lower() for p in rel_path.parts]
@@ -63,22 +71,54 @@ def humanize_age(mtime: float) -> str:
     return f"{int(hours / 24)}d ago"
 
 
+def resolve_target(raw_target: str, name_index: dict[str, str]) -> str | None:
+    """Đổi 1 target [[...]] thành file_path thật trong vault (resolve theo basename).
+
+    Obsidian resolve link chủ yếu theo tên file, bỏ alias (|), heading (#), đuôi .md.
+    Trả None nếu là link treo (target không tồn tại trong vault)."""
+    t = raw_target.split("|", 1)[0].split("#", 1)[0].strip()
+    if t.lower().endswith(".md"):
+        t = t[:-3]
+    base = t.replace("\\", "/").rstrip("/").split("/")[-1].strip().lower()
+    if not base:
+        return None
+    return name_index.get(base)
+
+
 def scan_vault(vault: Path) -> list[dict]:
-    """Trả về danh sách row đã sắp xếp mới-nhất-trước (để tab Recent đúng thứ tự)."""
-    found: list[tuple[float, dict]] = []
+    """Quét vault, parse [[wikilink]] thành cột links, sắp xếp mới-nhất-trước."""
+    raw: list[tuple[float, Path, str]] = []
     for md in vault.rglob("*.md"):
         rel = md.relative_to(vault)
         if any(part in IGNORE_DIRS for part in rel.parts):
             continue
-        mtime = md.stat().st_mtime
-        found.append((mtime, {
-            "file_name": md.stem,
-            "file_path": rel.as_posix(),
+        try:
+            content = md.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            content = ""
+        raw.append((md.stat().st_mtime, rel, content))
+
+    # Index basename -> file_path để resolve [[wikilink]].
+    name_index = {rel.stem.lower(): rel.as_posix() for _, rel, _ in raw}
+
+    items: list[tuple[float, dict]] = []
+    for mtime, rel, content in raw:
+        src_path = rel.as_posix()
+        links: list[str] = []
+        for raw_target in WIKILINK_RX.findall(content):
+            tp = resolve_target(raw_target, name_index)
+            if tp and tp != src_path and tp not in links:
+                links.append(tp)
+        items.append((mtime, {
+            "file_name": rel.stem,
+            "file_path": src_path,
             "category": derive_category(rel),
             "updated_at": humanize_age(mtime),
+            "links": links,
         }))
-    found.sort(key=lambda t: t[0], reverse=True)
-    rows = [row for _, row in found]
+
+    items.sort(key=lambda t: t[0], reverse=True)
+    rows = [row for _, row in items]
     # 15 note mới nhất -> Recent (override category folder).
     for row in rows[:RECENT_COUNT]:
         row["category"] = "Recent"
@@ -102,11 +142,12 @@ def main() -> None:
     by_cat: dict[str, int] = {}
     for r in rows:
         by_cat[r["category"]] = by_cat.get(r["category"], 0) + 1
-    print(f"Quét {vault}: {len(rows)} ghi chú .md  {by_cat}")
+    total_links = sum(len(r["links"]) for r in rows)
+    print(f"Quét {vault}: {len(rows)} ghi chú .md, {total_links} link  {by_cat}")
 
     if args.dry_run:
         for r in rows[:12]:
-            print(f"  [{r['category']:>6}] {r['file_path']}  ({r['updated_at']})")
+            print(f"  [{r['category']:>6}] {r['file_path']}  ({len(r['links'])} links, {r['updated_at']})")
         print("(dry-run — KHÔNG ghi DB)")
         return
 

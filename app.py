@@ -1,3 +1,4 @@
+import json
 import os
 from html import escape
 import httpx
@@ -1571,6 +1572,40 @@ with tab_omi:
 with tab_graph:
     st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
     
+    # Dựng node + cạnh từ vault thật (df_vault có cột links khi đã sync Obsidian).
+    g_rows = df_vault.to_dict("records")
+    has_links = "links" in df_vault.columns
+    cat_colors = {"Recent": "#5ad7e6", "Notes": "#a855f7", "Omi": "#34d399"}
+    path_to_idx = {str(r.get("file_path")): i for i, r in enumerate(g_rows)}
+
+    g_nodes = [{"name": str(r.get("file_name", "")),
+                "color": cat_colors.get(r.get("category"), "#6366f1")} for r in g_rows]
+
+    g_edges: list[list[int]] = []
+    for i, r in enumerate(g_rows):
+        raw_links = r.get("links") if has_links else []
+        if isinstance(raw_links, str):
+            try:
+                raw_links = json.loads(raw_links)
+            except (ValueError, TypeError):
+                raw_links = []
+        if not isinstance(raw_links, list):
+            raw_links = []
+        for tgt in raw_links:
+            j = path_to_idx.get(str(tgt))
+            if j is not None and j != i:
+                g_edges.append([i, j])
+
+    # Bán kính node theo degree (số liên kết) để hub nổi bật.
+    deg = [0] * len(g_nodes)
+    for s, t in g_edges:
+        deg[s] += 1
+        deg[t] += 1
+    for i, n in enumerate(g_nodes):
+        n["r"] = 5 + min(deg[i], 12)
+
+    count_label = f"{len(g_nodes)} notes &bull; {len(g_edges)} links"
+
     # Embedded high-end Canvas simulation
     graph_html = """
     <!DOCTYPE html>
@@ -1621,7 +1656,7 @@ with tab_graph:
         <div class="info-panel">
             <div class="info-title">KNOWLEDGE GRAPH 2D</div>
             <div class="info-subtitle">
-                199 notes &bull; 897 links<br>
+                __COUNT_LABEL__<br>
                 <span style="font-size:11px; color:#8b92b6;">drag nodes &bull; scroll to zoom &bull; double-click auto-spin</span>
             </div>
         </div>
@@ -1640,44 +1675,16 @@ with tab_graph:
                 canvas.width = width;
             });
 
-            // Beautiful network dataset mirroring the mockups
-            const nodes = [
-              { name: "Goldie Agency", color: "#a855f7", r: 9, x: width * 0.35, y: height * 0.4 },
-              { name: "Stripe", color: "#22d3ee", r: 8, x: width * 0.45, y: height * 0.3 },
-              { name: "Affiliate Challenge", color: "#34d399", r: 9, x: width * 0.55, y: height * 0.45 },
-              { name: "AI Profit Boardroom", color: "#fb7185", r: 12, x: width * 0.5, y: height * 0.5 },
-              { name: "Funnel Strategy", color: "#f59e0b", r: 8, x: width * 0.42, y: height * 0.62 },
-              { name: "Daily QA", color: "#34d399", r: 7, x: width * 0.65, y: height * 0.55 },
-              { name: "Bao Huynh Quoc", color: "#a855f7", r: 9, x: width * 0.28, y: height * 0.52 },
-              { name: "YouTube", color: "#6366f1", r: 8, x: width * 0.6, y: height * 0.32 },
-              { name: "Telegram", color: "#22d3ee", r: 7, x: width * 0.72, y: height * 0.45 },
-              { name: "Antigravity", color: "#6366f1", r: 10, x: width * 0.38, y: height * 0.22 },
-              { name: "OpenClaw", color: "#ff7eb3", r: 9, x: width * 0.52, y: height * 0.2 },
-              { name: "Claude Code", color: "#ff9d4d", r: 10, x: width * 0.22, y: height * 0.35 },
-              { name: "skool", color: "#22d3ee", r: 8, x: width * 0.58, y: height * 0.68 },
-              { name: "Enrique Austin", color: "#34d399", r: 7, x: width * 0.7, y: height * 0.65 },
-              { name: "Value Stacking", color: "#fb7185", r: 8, x: width * 0.78, y: height * 0.52 },
-              { name: "SEO Pipeline", color: "#a855f7", r: 9, x: width * 0.18, y: height * 0.48 },
-              { name: "Underlord", color: "#f59e0b", r: 8, x: width * 0.15, y: height * 0.6 },
-              { name: "Paperclip", color: "#34d399", r: 7, x: width * 0.25, y: height * 0.7 },
-              { name: "Zapier", color: "#22d3ee", r: 7, x: width * 0.32, y: height * 0.78 },
-              { name: "Make.com", color: "#a855f7", r: 8, x: width * 0.48, y: height * 0.8 },
-            ];
+            // Nodes (ghi chú) + cạnh ([[wikilink]] đã resolve) inject từ Obsidian vault thật.
+            const nodes = __NODES__;
+            nodes.forEach((n, i) => {
+                const ang = (i / Math.max(1, nodes.length)) * Math.PI * 2;
+                const rad = Math.min(width, 820) * (0.16 + 0.26 * ((i % 6) / 6));
+                n.x = width / 2 + Math.cos(ang) * rad + (Math.random() - 0.5) * 40;
+                n.y = height / 2 + Math.sin(ang) * rad + (Math.random() - 0.5) * 40;
+            });
 
-            const links = [];
-            for (let i = 0; i < nodes.length; i++) {
-                // Connect each node to nearest 2-3 neighbors
-                const sorted = nodes
-                    .map((n, idx) => ({ idx, dist: Math.hypot(n.x - nodes[i].x, n.y - nodes[i].y) }))
-                    .filter(o => o.idx !== i)
-                    .sort((a, b) => a.dist - b.dist)
-                    .slice(0, 3);
-                sorted.forEach(s => {
-                    if (!links.some(l => (l.source === i && l.target === s.idx) || (l.source === s.idx && l.target === i))) {
-                        links.push({ source: i, target: s.idx });
-                    }
-                });
-            }
+            const links = __EDGES__.map(e => ({ source: e[0], target: e[1] }));
 
             let scale = 1;
             let offsetX = 0;
@@ -1815,11 +1822,15 @@ with tab_graph:
                     ctx.fill();
                     
                     ctx.shadowBlur = 0;
-                    
-                    ctx.fillStyle = activeNode ? '#ffffff' : 'rgba(216, 212, 230, 0.65)';
-                    ctx.font = activeNode ? 'bold 11px sans-serif' : '10px sans-serif';
-                    ctx.textAlign = 'center';
-                    ctx.fillText(n.name, n.x, n.y + n.r + 14);
+
+                    // Nhãn: chỉ hiện cho hub (degree cao -> r>=10) hoặc node đang hover, tránh rối 174 node.
+                    if (activeNode || n.r >= 10) {
+                        const label = n.name.length > 28 ? n.name.slice(0, 27) + '…' : n.name;
+                        ctx.fillStyle = activeNode ? '#ffffff' : 'rgba(216, 212, 230, 0.65)';
+                        ctx.font = activeNode ? 'bold 11px sans-serif' : '10px sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(label, n.x, n.y + n.r + 14);
+                    }
                 });
 
                 ctx.restore();
@@ -1831,6 +1842,13 @@ with tab_graph:
     </body>
     </html>
     """
+    # json.dumps -> chèn vào <script>; escape '<' để không thể breakout </script>.
+    nodes_json = json.dumps(g_nodes).replace("<", "\\u003c")
+    edges_json = json.dumps(g_edges).replace("<", "\\u003c")
+    graph_html = (graph_html
+                  .replace("__NODES__", nodes_json)
+                  .replace("__EDGES__", edges_json)
+                  .replace("__COUNT_LABEL__", count_label))
     st.components.v1.html(graph_html, height=520)
 
 # ==============================================================================

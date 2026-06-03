@@ -13,7 +13,8 @@ CREATE TABLE obsidian_vault (
     file_name TEXT NOT NULL,
     file_path TEXT NOT NULL,
     category TEXT DEFAULT 'Recent',
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    links JSONB NOT NULL DEFAULT '[]'::jsonb  -- [[wikilink]] đã resolve -> file_path, dựng knowledge graph
 );
 
 CREATE TABLE ai_spend (

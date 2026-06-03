@@ -66,7 +66,7 @@ app = FastAPI(title="Hermes API shim")
 # Kích hoạt CORS hỗ trợ các truy cập cross-origin từ các domain phụ khác nhau
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=r"https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

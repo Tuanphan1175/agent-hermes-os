@@ -1480,7 +1480,106 @@ if active == "kanban":
     st.stop()
 
 # ------------------------------------------------------------------------------
-# VIEW: ALL OTHER SELF SECTIONS (Goals, Studio, Notebook, Kanban, Journal, Guide)
+# VIEW: GOALS MANAGER (Roman Numeral IX) — xem + thêm/sửa/xoá OKR vào mission_control
+# ------------------------------------------------------------------------------
+if active == "goals":
+    g = SELF_SECTIONS["goals"]
+    render_custom_header(g["num"], "SELF", g["label"], g["desc"])
+
+    admin = get_admin_client()
+    can_write = admin is not None
+
+    # Đọc trực tiếp mission_control (anon đọc được nhờ RLS public) — KHÔNG dùng mock
+    # fallback để manager phản ánh đúng trạng thái DB thật (tránh sửa/xoá nhầm row ảo).
+    try:
+        res = supabase.table("mission_control").select("*").order("id").execute()
+        mc = pd.DataFrame(res.data) if res.data else pd.DataFrame()
+    except Exception:
+        mc = pd.DataFrame()
+
+    if not mc.empty:
+        for col in ["progress_percent", "turns_used", "turn_budget"]:
+            mc[col] = pd.to_numeric(mc[col], errors="coerce").fillna(0).astype(int)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Objectives", len(mc))
+        c2.metric("Mean Completion", f"{int(mc['progress_percent'].mean())}%")
+        c3.metric("Budget Utilized", f"{int(mc['turns_used'].sum())}/{int(mc['turn_budget'].sum())}")
+        st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+
+    if not can_write:
+        st.warning("Thiếu SUPABASE_SERVICE_ROLE_KEY — chế độ chỉ-xem, không thêm/sửa/xoá được mục tiêu.")
+
+    STATUSES = ["To Do", "In Progress", "Done"]
+    STMAP = {"To Do": "st-todo", "In Progress": "st-prog", "Done": "st-done"}
+
+    # --- Thêm mục tiêu mới ---
+    with st.expander("➕ Thêm mục tiêu mới", expanded=mc.empty):
+        with st.form("add_goal", clear_on_submit=True):
+            new_name = st.text_input("Tên mục tiêu", placeholder="vd. Hoàn thành chiến dịch SEO Q3")
+            a, b, c = st.columns(3)
+            new_status = a.selectbox("Trạng thái", STATUSES, key="add_status")
+            new_progress = b.slider("Tiến độ %", 0, 100, 0, key="add_prog")
+            new_budget = c.number_input("Ngân sách bước", 1, 999, 20, key="add_budget")
+            submitted = st.form_submit_button("💾 Lưu mục tiêu", disabled=not can_write, use_container_width=True)
+        if submitted:
+            if not new_name.strip():
+                st.warning("Nhập tên mục tiêu.")
+            elif can_write:
+                admin.table("mission_control").insert({
+                    "goal_name": new_name.strip(),
+                    "status": new_status,
+                    "progress_percent": int(new_progress),
+                    "turns_used": 0,
+                    "turn_budget": int(new_budget),
+                }).execute()
+                st.success("Đã thêm mục tiêu.")
+                st.rerun()
+
+    # --- Danh sách mục tiêu + sửa/xoá ---
+    if mc.empty:
+        st.info("Chưa có mục tiêu nào trong mission_control. Thêm ở khung trên.")
+    else:
+        for _, r in mc.iterrows():
+            gid = int(r["id"])
+            status = str(r["status"])
+            cls = STMAP.get(status, "st-todo")
+            pct = int(r["progress_percent"])
+            st.markdown(f"""
+            <div class='mc-card'>
+              <div class='mc-top'>
+                <div class='mc-title'>{escape(str(r['goal_name']))}</div>
+                <div class='status-badge {cls}'>{escape(status)}</div>
+              </div>
+              <div class='mc-bar'><div class='mc-fill' style='width:{pct}%;'></div></div>
+              <div class='mc-meta'>
+                <span>{pct}% complete</span>
+                <span>{int(r['turns_used'])}/{int(r['turn_budget'])} steps</span>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            with st.expander("✎ Sửa / Xoá", expanded=False):
+                e1, e2, e3 = st.columns(3)
+                up_status = e1.selectbox("Trạng thái", STATUSES,
+                                         index=STATUSES.index(status) if status in STATUSES else 0,
+                                         key=f"st_{gid}")
+                up_pct = e2.slider("Tiến độ %", 0, 100, pct, key=f"pc_{gid}")
+                up_used = e3.number_input("Bước đã dùng", 0, 9999, int(r["turns_used"]), key=f"tu_{gid}")
+                s1, s2 = st.columns(2)
+                if s1.button("💾 Lưu thay đổi", key=f"sv_{gid}", disabled=not can_write, use_container_width=True):
+                    admin.table("mission_control").update({
+                        "status": up_status,
+                        "progress_percent": int(up_pct),
+                        "turns_used": int(up_used),
+                    }).eq("id", gid).execute()
+                    st.rerun()
+                if s2.button("🗑 Xoá mục tiêu", key=f"del_{gid}", disabled=not can_write, use_container_width=True):
+                    admin.table("mission_control").delete().eq("id", gid).execute()
+                    st.rerun()
+    st.stop()
+
+# ------------------------------------------------------------------------------
+# VIEW: ALL OTHER SELF SECTIONS (Studio, Notebook, Journal, Guide)
 # ------------------------------------------------------------------------------
 if active in SELF_SECTIONS and active != "memory":
     s = SELF_SECTIONS[active]

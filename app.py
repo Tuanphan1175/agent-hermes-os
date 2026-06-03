@@ -1306,6 +1306,58 @@ if __name__ == "__main__":
                 st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
                 st.dataframe(df_a, use_container_width=True, hide_index=True)
 
+    elif active == "codex":
+        tab_setup, tab_spend = st.tabs(["Launch & Setup", "AI Spend"])
+
+        with tab_setup:
+            st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+            # Codex là coding agent của OpenAI (CLI + cloud) — không nhúng iframe, mở app/CLI.
+            codex_url = st.secrets.get("CODEX_URL", "https://chatgpt.com/codex")
+
+            st.markdown(f"""
+            <div style="background: rgba(30, 24, 52, 0.45); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(16, 185, 129, 0.15); border-radius: 14px; padding: 35px 25px; text-align: center; margin-bottom: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.35);">
+                <div style="font-size: 54px; margin-bottom: 15px; filter: drop-shadow(0 0 12px rgba(16, 185, 129, 0.5)); line-height: 1; color:#34d399;">■</div>
+                <h3 style="color:#ffffff; margin: 0 0 10px 0; font-family:'Outfit', sans-serif; font-size: 22px; font-weight: 500; letter-spacing: -0.5px;">
+                    Codex — OpenAI Coding Agent
+                </h3>
+                <p style="color:#a5a1c0; font-size:14.5px; max-width:580px; margin: 0 auto 25px auto; line-height:1.6; font-weight: 300;">
+                    Agent coding của OpenAI cho refactor, static analysis và kiểm chứng kiến trúc. Chạy bằng CLI ngay trong repo hoặc trên cloud — mở app để giao việc cho agent.
+                </p>
+                <a href="{codex_url}" target="_blank" style="display: inline-flex; align-items: center; gap: 8px; background: linear-gradient(135deg, #10b981, #059669); color: #ffffff !important; font-weight: 600; font-size: 14px; padding: 12px 30px; border-radius: 8px; text-decoration: none; box-shadow: 0 0 20px rgba(16, 185, 129, 0.4); transition: all 0.2s; border: 1px solid rgba(255, 255, 255, 0.1);">
+                    Mở Codex ↗
+                </a>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 18px 0 8px 0; font-weight:500;'>1. CÀI CODEX CLI</div>", unsafe_allow_html=True)
+            st.code("npm install -g @openai/codex", language="bash")
+
+            st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 18px 0 8px 0; font-weight:500;'>2. ĐĂNG NHẬP</div>", unsafe_allow_html=True)
+            st.markdown("Đăng nhập bằng tài khoản ChatGPT (Plus / Pro / Team) hoặc đặt `OPENAI_API_KEY`.")
+
+            st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 18px 0 8px 0; font-weight:500;'>3. CHẠY TRONG REPO</div>", unsafe_allow_html=True)
+            st.code("codex", language="bash")
+            st.caption("Chạy trong thư mục project để agent đọc/sửa code; hoặc dùng bản cloud tại chatgpt.com/codex.")
+
+            st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 18px 0 8px 0; font-weight:500;'>4. GIAO TASK</div>", unsafe_allow_html=True)
+            st.markdown("Refactor, static analysis, kiểm chứng kiến trúc → agent lập kế hoạch và sửa code.")
+
+        with tab_spend:
+            st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
+            df_a = get_ai_spend(active)
+            if df_a.empty:
+                st.info(f"No logged token cost events for agent: **{a['label']}**.")
+            else:
+                df_a["cost_usd"] = pd.to_numeric(df_a["cost_usd"], errors="coerce").fillna(0)
+                df_a["input_tokens"] = pd.to_numeric(df_a["input_tokens"], errors="coerce").fillna(0)
+                df_a["output_tokens"] = pd.to_numeric(df_a["output_tokens"], errors="coerce").fillna(0)
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Logged Costs (USD)", f"${df_a['cost_usd'].sum():,.4f}")
+                c2.metric("Total Tokens Processed", f"{int(df_a['input_tokens'].sum() + df_a['output_tokens'].sum()):,}")
+                c3.metric("Swarm API Calls", f"{len(df_a):,}")
+                st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
+                st.dataframe(df_a, use_container_width=True, hide_index=True)
+
     else:
         # Standard Agent spend dashboard view (all other agents)
         df_a = get_ai_spend(active)

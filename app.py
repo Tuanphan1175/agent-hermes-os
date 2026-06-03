@@ -630,8 +630,13 @@ if active in AGENTS:
                             try:
                                 headers = {"Authorization": f"Bearer {key}"} if key else {}
                                 r = httpx.post(f"{url.rstrip('/')}/chat", json={"message": prompt}, headers=headers, timeout=180)
-                                r.raise_for_status()
-                                reply = r.json().get("reply", "(empty)")
+                                if r.status_code == 401:
+                                    reply = ("⚠️ **401 Unauthorized** — `HERMES_API_KEY` không khớp với shim trên VPS.\n\n"
+                                             "Sửa: copy đúng key trong `/root/.hermes/hermes-api.env` (VPS) vào Streamlit Cloud "
+                                             "→ **Settings → Secrets** (`HERMES_API_KEY`) cho khớp, rồi rerun app. Xem `vps/README.md`.")
+                                else:
+                                    r.raise_for_status()
+                                    reply = r.json().get("reply", "(empty)")
                             except Exception as e:
                                 reply = f"⚠️ Hermes API error: {e}"
                         else:

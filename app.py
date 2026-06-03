@@ -1047,6 +1047,109 @@ if __name__ == "__main__":
                 st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
                 st.dataframe(df_a, use_container_width=True, hide_index=True)
             
+    elif active == "free-claude":
+        tab_setup, tab_spend = st.tabs(["Setup & Tunnel", "AI Spend"])
+
+        with tab_setup:
+            st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+
+            st.markdown(f"""
+            <div style="background: rgba(30, 24, 52, 0.45); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 30px 25px; margin-bottom: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.35);">
+                <div style="font-size: 48px; margin-bottom: 12px; filter: drop-shadow(0 0 12px rgba(52, 211, 153, 0.5)); line-height: 1;">▼</div>
+                <h3 style="color:#ffffff; margin: 0 0 10px 0; font-family:'Outfit', sans-serif; font-size: 22px; font-weight: 500; letter-spacing: -0.5px;">
+                    Free Claude Code — Local Proxy
+                </h3>
+                <p style="color:#a5a1c0; font-size:14.5px; max-width:680px; margin: 0 auto 18px auto; line-height:1.65; font-weight: 300;">
+                    Routes Claude Code traffic qua 17 backend miễn phí (NVIDIA NIM, OpenRouter, Gemini, DeepSeek, Groq, Ollama…).
+                    <b>Chạy local trên máy bạn</b>, không host trên cloud — dùng <code>cloudflared</code> để tunnel ra public URL rồi dán vào đây để app này xác minh kết nối.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 18px 0 8px 0; font-weight:500;'>1. CÀI TRÊN MÁY LOCAL (PowerShell, chạy 1 lần)</div>", unsafe_allow_html=True)
+            st.code("irm https://github.com/Alishahryar1/free-claude-code/blob/main/scripts/install.ps1?raw=1 | iex", language="powershell")
+
+            st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 18px 0 8px 0; font-weight:500;'>2. KHỞI ĐỘNG PROXY (port 8082, để chạy nền)</div>", unsafe_allow_html=True)
+            st.code("fcc-server", language="powershell")
+
+            st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 18px 0 8px 0; font-weight:500;'>3. MỞ TUNNEL RA PUBLIC (Quick Tunnel — không cần tài khoản Cloudflare)</div>", unsafe_allow_html=True)
+            st.code("cloudflared tunnel --url http://127.0.0.1:8082", language="powershell")
+            st.caption("Sao chép URL `https://<...>.trycloudflare.com` xuất hiện trong output rồi dán vào ô bên dưới.")
+
+            st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
+            col_in, col_btn = st.columns([3, 1])
+            with col_in:
+                proxy_url = st.text_input(
+                    "Public tunnel URL",
+                    value=st.session_state.get("fcc_tunnel_url", ""),
+                    placeholder="https://<random>.trycloudflare.com",
+                    key="fcc_tunnel_url_input",
+                    label_visibility="visible",
+                )
+            with col_btn:
+                st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+                test_clicked = st.button("Test connection", use_container_width=True, key="fcc_test_btn")
+
+            if proxy_url:
+                st.session_state["fcc_tunnel_url"] = proxy_url
+
+            if test_clicked and proxy_url:
+                clean = proxy_url.rstrip("/")
+                with st.spinner("Pinging proxy..."):
+                    try:
+                        r = httpx.get(f"{clean}/v1/models", timeout=10)
+                        st.session_state["fcc_test_result"] = ("ok", r.status_code, clean)
+                    except Exception as e:
+                        st.session_state["fcc_test_result"] = ("err", str(e), clean)
+
+            res = st.session_state.get("fcc_test_result")
+            if res and (not test_clicked or res[2] == st.session_state.get("fcc_tunnel_url", "").rstrip("/")):
+                kind, payload, url = res
+                if kind == "ok":
+                    st.markdown(f"""
+                    <div style="background: rgba(52, 211, 153, 0.10); border: 1px solid rgba(52, 211, 153, 0.35); border-radius: 10px; padding: 14px 18px; margin-top: 10px;">
+                        <div style="color:#34d399; font-weight:600; font-size:14px; margin-bottom:4px;">✓ Tunnel reachable (HTTP {payload})</div>
+                        <div style="color:#a5a1c0; font-size:12.5px;">Proxy tại <code>{escape(url)}</code> đang phản hồi. Copy env vars bên dưới vào VSCode/Claude Code để bắt đầu route traffic.</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown(f"""
+                    <div style="background: rgba(239, 68, 68, 0.10); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 10px; padding: 14px 18px; margin-top: 10px;">
+                        <div style="color:#ef4444; font-weight:600; font-size:14px; margin-bottom:4px;">✗ Không kết nối được</div>
+                        <div style="color:#a5a1c0; font-size:12.5px;">{escape(str(payload))}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+            tunnel_url = st.session_state.get("fcc_tunnel_url", "").rstrip("/")
+            if tunnel_url:
+                st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 22px 0 8px 0; font-weight:500;'>4. DÁN VÀO CLAUDE CODE / VSCODE</div>", unsafe_allow_html=True)
+                env_block = (
+                    "{\n"
+                    f'  "ANTHROPIC_BASE_URL": "{tunnel_url}",\n'
+                    '  "ANTHROPIC_AUTH_TOKEN": "freecc",\n'
+                    '  "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1",\n'
+                    '  "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "190000"\n'
+                    "}"
+                )
+                st.code(env_block, language="json")
+                st.caption("VSCode: Settings → claude-code.environmentVariables → Edit in settings.json. Claude CLI: chạy `fcc-claude`.")
+
+        with tab_spend:
+            st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
+            df_a = get_ai_spend(active)
+            if df_a.empty:
+                st.info(f"No logged token cost events for agent: **{a['label']}**. (Free Claude Code là local proxy — chi phí được track ở Admin UI của proxy, không qua bảng Supabase này.)")
+            else:
+                df_a["cost_usd"] = pd.to_numeric(df_a["cost_usd"], errors="coerce").fillna(0)
+                df_a["input_tokens"] = pd.to_numeric(df_a["input_tokens"], errors="coerce").fillna(0)
+                df_a["output_tokens"] = pd.to_numeric(df_a["output_tokens"], errors="coerce").fillna(0)
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Logged Costs (USD)", f"${df_a['cost_usd'].sum():,.4f}")
+                c2.metric("Total Tokens Processed", f"{int(df_a['input_tokens'].sum() + df_a['output_tokens'].sum()):,}")
+                c3.metric("Swarm API Calls", f"{len(df_a):,}")
+                st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
+                st.dataframe(df_a, use_container_width=True, hide_index=True)
+
     else:
         # Standard Agent spend dashboard view (all other agents)
         df_a = get_ai_spend(active)

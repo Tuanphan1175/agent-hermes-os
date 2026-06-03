@@ -16,6 +16,7 @@ pip install -r requirements-dev.txt && playwright install chromium
 python shoot.py                                 # Playwright screenshots of the UI (visual verify)
 
 python scripts/backup_supabase.py               # export 3 tables -> backups/*.json (needs env, see below)
+python scripts/sync_obsidian.py --vault PATH    # sync local Obsidian vault -> obsidian_vault table (needs env; --dry-run to preview)
 ```
 
 There is **no test suite, linter, or build step.** Verification is visual: run the app or `shoot.py`.

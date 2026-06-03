@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from html import escape
 import httpx
 import streamlit as st
@@ -413,6 +413,8 @@ def get_ai_spend(active_agent: str | None = None) -> pd.DataFrame:
 # ==============================================================================
 
 def render_custom_header(num: str, section_type: str, section_name: str, desc: str) -> None:
+    # Giờ Ho Chi Minh (UTC+7, không DST) tính lúc render.
+    hcm_time = datetime.now(timezone(timedelta(hours=7))).strftime("%H:%M")
     st.markdown(f"""
     <div style="position: relative; margin-bottom: 2rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 1.2rem;">
         <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap:15px;">
@@ -429,7 +431,7 @@ def render_custom_header(num: str, section_type: str, section_name: str, desc: s
             </div>
             <div style="display: flex; gap: 12px; align-items: center; margin-top: 10px;">
                 <div style="font-family: monospace; font-size: 11px; color: #8b92b6; background: rgba(30,24,52,0.5); border: 1px solid rgba(255,255,255,0.05); padding: 6px 12px; border-radius: 8px; font-weight:500;">
-                    13:10 LOCAL &bull; BANGKOK
+                    {hcm_time} LOCAL &bull; HO CHI MINH
                 </div>
                 <a href="#" class="nav-link" style="display: flex; align-items: center; gap: 6px; font-family: 'Outfit', sans-serif; font-size: 13px; color: #a5a1c0 !important; background: rgba(30,24,52,0.5); border: 1px solid rgba(255,255,255,0.05); padding: 6px 14px; border-radius: 8px; text-decoration: none; transition: all 0.2s;">
                     <span style="font-size: 11px; background:rgba(255,255,255,0.08); padding:1px 5px; border-radius:4px; margin-right:2px;">⌘K</span> Command palette
@@ -466,7 +468,7 @@ with st.sidebar:
     # Top Branding Header
     st.markdown("""
         <div style="padding: 10px 10px 20px 10px; border-bottom: 1px solid rgba(255,255,255,0.05);">
-            <div style="font-family: 'Outfit', sans-serif; font-size: 10px; font-weight: 500; color: #7d7796; letter-spacing: 1.5px; text-transform: uppercase;">LOCAL &bull; BANGKOK</div>
+            <div style="font-family: 'Outfit', sans-serif; font-size: 10px; font-weight: 500; color: #7d7796; letter-spacing: 1.5px; text-transform: uppercase;">LOCAL &bull; HO CHI MINH</div>
             <div style="font-family: 'Cinzel', serif; font-size: 24px; font-weight: 400; color: #ffffff; margin-top: 3px; display: flex; align-items: center; gap: 8px;">
                 Agentic <span style="font-style: italic; color:#5ad7e6;">OS</span>
             </div>

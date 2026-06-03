@@ -4,6 +4,9 @@ BASE = "http://localhost:8530"
 shots = [
     ("memory",   f"{BASE}/?nav=memory",   "shot_memory.png",   "Obsidian Vault"),
     ("openclaw", f"{BASE}/?nav=openclaw", "shot_openclaw.png", "OpenClaw"),
+    ("claude",      f"{BASE}/?nav=claude",      "shot_claude.png",      "Anthropic Flagship"),
+    ("gemini",      f"{BASE}/?nav=gemini",      "shot_gemini.png",      "Google DeepMind"),
+    ("antigravity", f"{BASE}/?nav=antigravity", "shot_antigravity.png", "Agentic IDE"),
 ]
 
 with sync_playwright() as p:

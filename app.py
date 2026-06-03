@@ -1150,6 +1150,161 @@ if __name__ == "__main__":
                 st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
                 st.dataframe(df_a, use_container_width=True, hide_index=True)
 
+    elif active == "claude":
+        tab_setup, tab_spend = st.tabs(["Launch & Setup", "AI Spend"])
+
+        with tab_setup:
+            st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+            # Claude (claude.ai) chặn nhúng iframe (frame-ancestors) — panel là cổng mở app + hướng dẫn.
+            claude_url = st.secrets.get("CLAUDE_URL", "https://claude.ai")
+
+            st.markdown(f"""
+            <div style="background: rgba(30, 24, 52, 0.45); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255, 157, 77, 0.15); border-radius: 14px; padding: 35px 25px; text-align: center; margin-bottom: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.35);">
+                <div style="font-size: 54px; margin-bottom: 15px; filter: drop-shadow(0 0 12px rgba(255, 157, 77, 0.5)); line-height: 1; color:#ffb877;">✦</div>
+                <h3 style="color:#ffffff; margin: 0 0 10px 0; font-family:'Outfit', sans-serif; font-size: 22px; font-weight: 500; letter-spacing: -0.5px;">
+                    Claude — Anthropic Flagship
+                </h3>
+                <p style="color:#a5a1c0; font-size:14.5px; max-width:580px; margin: 0 auto 25px auto; line-height:1.6; font-weight: 300;">
+                    Model reasoning hàng đầu của Anthropic cho system architecture và coding agentic. Web app bảo mật chống nhúng — hãy mở trên tab độc lập để đăng nhập đầy đủ.
+                </p>
+                <a href="{claude_url}" target="_blank" style="display: inline-flex; align-items: center; gap: 8px; background: linear-gradient(135deg, #ff9d4d, #ff6a3d); color: #ffffff !important; font-weight: 600; font-size: 14px; padding: 12px 30px; border-radius: 8px; text-decoration: none; box-shadow: 0 0 20px rgba(255, 157, 77, 0.4); transition: all 0.2s; border: 1px solid rgba(255, 255, 255, 0.1);">
+                    Mở Claude ↗
+                </a>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 18px 0 8px 0; font-weight:500;'>1. MỞ CLAUDE</div>", unsafe_allow_html=True)
+            st.markdown("Dùng [claude.ai](https://claude.ai) trên web hoặc tải app desktop (macOS / Windows).")
+
+            st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 18px 0 8px 0; font-weight:500;'>2. ĐĂNG NHẬP ANTHROPIC</div>", unsafe_allow_html=True)
+            st.markdown("Đăng nhập tài khoản Anthropic (Free / Pro / Max).")
+
+            st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 18px 0 8px 0; font-weight:500;'>3. CLAUDE CODE (TÙY CHỌN)</div>", unsafe_allow_html=True)
+            st.code("npm install -g @anthropic-ai/claude-code", language="bash")
+            st.caption("Cài CLI rồi chạy `claude` trong thư mục repo để code agentic ngay trong terminal.")
+
+            st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 18px 0 8px 0; font-weight:500;'>4. GIAO TASK</div>", unsafe_allow_html=True)
+            st.markdown("Chat để reasoning / system architecture, hoặc giao task code trực tiếp cho Claude Code.")
+
+        with tab_spend:
+            st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
+            df_a = get_ai_spend(active)
+            if df_a.empty:
+                st.info(f"No logged token cost events for agent: **{a['label']}**.")
+            else:
+                df_a["cost_usd"] = pd.to_numeric(df_a["cost_usd"], errors="coerce").fillna(0)
+                df_a["input_tokens"] = pd.to_numeric(df_a["input_tokens"], errors="coerce").fillna(0)
+                df_a["output_tokens"] = pd.to_numeric(df_a["output_tokens"], errors="coerce").fillna(0)
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Logged Costs (USD)", f"${df_a['cost_usd'].sum():,.4f}")
+                c2.metric("Total Tokens Processed", f"{int(df_a['input_tokens'].sum() + df_a['output_tokens'].sum()):,}")
+                c3.metric("Swarm API Calls", f"{len(df_a):,}")
+                st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
+                st.dataframe(df_a, use_container_width=True, hide_index=True)
+
+    elif active == "gemini":
+        tab_setup, tab_spend = st.tabs(["Launch & Setup", "AI Spend"])
+
+        with tab_setup:
+            st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+            # Gemini (gemini.google.com) chặn nhúng iframe — panel là cổng mở app + hướng dẫn.
+            gemini_url = st.secrets.get("GEMINI_URL", "https://gemini.google.com")
+
+            st.markdown(f"""
+            <div style="background: rgba(30, 24, 52, 0.45); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(168, 85, 247, 0.15); border-radius: 14px; padding: 35px 25px; text-align: center; margin-bottom: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.35);">
+                <div style="font-size: 54px; margin-bottom: 15px; filter: drop-shadow(0 0 12px rgba(168, 85, 247, 0.5)); line-height: 1; color:#c084fc;">●</div>
+                <h3 style="color:#ffffff; margin: 0 0 10px 0; font-family:'Outfit', sans-serif; font-size: 22px; font-weight: 500; letter-spacing: -0.5px;">
+                    Gemini — Google DeepMind
+                </h3>
+                <p style="color:#a5a1c0; font-size:14.5px; max-width:580px; margin: 0 auto 25px auto; line-height:1.6; font-weight: 300;">
+                    Agent multimodal của Google: context cực dài, xử lý ảnh, PDF, video và audio. Web app chống nhúng — hãy mở trên tab độc lập để đăng nhập đầy đủ.
+                </p>
+                <a href="{gemini_url}" target="_blank" style="display: inline-flex; align-items: center; gap: 8px; background: linear-gradient(135deg, #a855f7, #7c3aed); color: #ffffff !important; font-weight: 600; font-size: 14px; padding: 12px 30px; border-radius: 8px; text-decoration: none; box-shadow: 0 0 20px rgba(168, 85, 247, 0.4); transition: all 0.2s; border: 1px solid rgba(255, 255, 255, 0.1);">
+                    Mở Gemini ↗
+                </a>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 18px 0 8px 0; font-weight:500;'>1. MỞ GEMINI</div>", unsafe_allow_html=True)
+            st.markdown("Dùng [gemini.google.com](https://gemini.google.com) trên web hoặc app Gemini trên điện thoại.")
+
+            st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 18px 0 8px 0; font-weight:500;'>2. ĐĂNG NHẬP GOOGLE</div>", unsafe_allow_html=True)
+            st.markdown("Free, hoặc Google AI Pro / Ultra để mở khóa model mạnh hơn và context dài hơn.")
+
+            st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 18px 0 8px 0; font-weight:500;'>3. MULTIMODAL</div>", unsafe_allow_html=True)
+            st.markdown("Upload ảnh, PDF, video, audio để Gemini xử lý ngữ cảnh lớn trong một lần.")
+
+            st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 18px 0 8px 0; font-weight:500;'>4. GIAO TASK</div>", unsafe_allow_html=True)
+            st.markdown("Reasoning, phân tích tài liệu dài, tổng hợp nội dung từ video/audio.")
+
+        with tab_spend:
+            st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
+            df_a = get_ai_spend(active)
+            if df_a.empty:
+                st.info(f"No logged token cost events for agent: **{a['label']}**.")
+            else:
+                df_a["cost_usd"] = pd.to_numeric(df_a["cost_usd"], errors="coerce").fillna(0)
+                df_a["input_tokens"] = pd.to_numeric(df_a["input_tokens"], errors="coerce").fillna(0)
+                df_a["output_tokens"] = pd.to_numeric(df_a["output_tokens"], errors="coerce").fillna(0)
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Logged Costs (USD)", f"${df_a['cost_usd'].sum():,.4f}")
+                c2.metric("Total Tokens Processed", f"{int(df_a['input_tokens'].sum() + df_a['output_tokens'].sum()):,}")
+                c3.metric("Swarm API Calls", f"{len(df_a):,}")
+                st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
+                st.dataframe(df_a, use_container_width=True, hide_index=True)
+
+    elif active == "antigravity":
+        tab_setup, tab_spend = st.tabs(["Launch & Setup", "AI Spend"])
+
+        with tab_setup:
+            st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+            # Antigravity là IDE desktop agent-first (Gemini 3) — không có web UI để nhúng iframe
+            # hay REST API, nên panel này là cổng mở app + hướng dẫn cài đặt.
+            ag_url = st.secrets.get("ANTIGRAVITY_URL", "https://antigravity.google")
+
+            st.markdown(f"""
+            <div style="background: rgba(30, 24, 52, 0.45); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(99, 102, 241, 0.15); border-radius: 14px; padding: 35px 25px; text-align: center; margin-bottom: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.35);">
+                <div style="font-size: 54px; margin-bottom: 15px; filter: drop-shadow(0 0 12px rgba(99, 102, 241, 0.5)); line-height: 1; color:#818cf8;">▲</div>
+                <h3 style="color:#ffffff; margin: 0 0 10px 0; font-family:'Outfit', sans-serif; font-size: 22px; font-weight: 500; letter-spacing: -0.5px;">
+                    Google Antigravity — Agentic IDE
+                </h3>
+                <p style="color:#a5a1c0; font-size:14.5px; max-width:580px; margin: 0 auto 25px auto; line-height:1.6; font-weight: 300;">
+                    IDE agent-first chạy Gemini 3, dùng cho refactor workspace, dựng style high-fidelity và visual verification. Đây là ứng dụng desktop — không nhúng được trong dashboard, hãy mở app để giao việc cho agent.
+                </p>
+                <a href="{ag_url}" target="_blank" style="display: inline-flex; align-items: center; gap: 8px; background: linear-gradient(135deg, #6366f1, #4f46e5); color: #ffffff !important; font-weight: 600; font-size: 14px; padding: 12px 30px; border-radius: 8px; text-decoration: none; box-shadow: 0 0 20px rgba(99, 102, 241, 0.4); transition: all 0.2s; border: 1px solid rgba(255, 255, 255, 0.1);">
+                    Mở Antigravity ↗
+                </a>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 18px 0 8px 0; font-weight:500;'>1. TẢI & CÀI ANTIGRAVITY</div>", unsafe_allow_html=True)
+            st.markdown("Tải bản Windows / macOS / Linux tại [antigravity.google](https://antigravity.google) rồi cài như một IDE thông thường.")
+
+            st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 18px 0 8px 0; font-weight:500;'>2. ĐĂNG NHẬP GOOGLE</div>", unsafe_allow_html=True)
+            st.markdown("Mở app và đăng nhập bằng tài khoản Google để kích hoạt model Gemini 3.")
+
+            st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 18px 0 8px 0; font-weight:500;'>3. MỞ WORKSPACE</div>", unsafe_allow_html=True)
+            st.markdown("Open folder project của bạn — agent sẽ có quyền đọc/sửa file trong workspace đó.")
+
+            st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 18px 0 8px 0; font-weight:500;'>4. GIAO TASK CHO AGENT</div>", unsafe_allow_html=True)
+            st.markdown("Mô tả task (refactor, dựng UI, visual verification) → agent tự lập kế hoạch, sửa code và tự kiểm chứng kết quả.")
+
+        with tab_spend:
+            st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
+            df_a = get_ai_spend(active)
+            if df_a.empty:
+                st.info(f"No logged token cost events for agent: **{a['label']}**. (Antigravity chạy local trên máy bạn — token Gemini không log qua bảng Supabase này.)")
+            else:
+                df_a["cost_usd"] = pd.to_numeric(df_a["cost_usd"], errors="coerce").fillna(0)
+                df_a["input_tokens"] = pd.to_numeric(df_a["input_tokens"], errors="coerce").fillna(0)
+                df_a["output_tokens"] = pd.to_numeric(df_a["output_tokens"], errors="coerce").fillna(0)
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Logged Costs (USD)", f"${df_a['cost_usd'].sum():,.4f}")
+                c2.metric("Total Tokens Processed", f"{int(df_a['input_tokens'].sum() + df_a['output_tokens'].sum()):,}")
+                c3.metric("Swarm API Calls", f"{len(df_a):,}")
+                st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
+                st.dataframe(df_a, use_container_width=True, hide_index=True)
+
     else:
         # Standard Agent spend dashboard view (all other agents)
         df_a = get_ai_spend(active)

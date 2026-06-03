@@ -1300,8 +1300,27 @@ if active == "kanban":
         </style>
     """, unsafe_allow_html=True)
     
-    # Nhúng trực tiếp giao diện Kanban thật
-    st.components.v1.iframe(kanban_url, height=850, scrolling=True)
+    # Đăng nhập trong iframe xuyên nguồn (cross-origin) bị trình duyệt chặn cookie phiên
+    # (third-party cookie / SameSite), nên nhập đúng mật khẩu vẫn không vào được.
+    # Giải pháp: mở Kanban ở tab độc lập — ngữ cảnh first-party, cookie đăng nhập hoạt động bình thường.
+    st.markdown(f"""
+    <div style="background: rgba(30, 24, 52, 0.45); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(168, 85, 247, 0.12); border-radius: 14px; padding: 35px 25px; text-align: center; margin-bottom: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.35);">
+        <div style="font-size: 54px; margin-bottom: 15px; filter: drop-shadow(0 0 12px rgba(168, 85, 247, 0.45)); line-height: 1;">📋</div>
+        <h3 style="color:#ffffff; margin: 0 0 10px 0; font-family:'Outfit', sans-serif; font-size: 22px; font-weight: 500; letter-spacing: -0.5px;">
+            Kanban Board — Workspace
+        </h3>
+        <p style="color:#a5a1c0; font-size:14.5px; max-width:580px; margin: 0 auto 25px auto; line-height:1.6; font-weight: 300;">
+            Bảng Kanban yêu cầu đăng nhập. Khi nhúng trong iframe, trình duyệt chặn cookie phiên xuyên nguồn nên nhập đúng mật khẩu vẫn không vào được. Hãy mở bảng trên một tab độc lập để đăng nhập hoạt động bình thường.
+        </p>
+        <a href="{kanban_url}" target="_blank" style="display: inline-flex; align-items: center; gap: 8px; background: linear-gradient(135deg, #a855f7, #7c3aed); color: #ffffff !important; font-weight: 600; font-size: 14px; padding: 12px 30px; border-radius: 8px; text-decoration: none; box-shadow: 0 0 20px rgba(168, 85, 247, 0.4); transition: all 0.2s; border: 1px solid rgba(255, 255, 255, 0.1);">
+            Mở Kanban Board ↗
+        </a>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Tùy chọn phụ: xem giao diện nhúng (đăng nhập có thể không hoạt động do trình duyệt chặn cookie iframe)
+    with st.expander("Hiển thị giao diện nhúng (Iframe)"):
+        st.components.v1.iframe(kanban_url, height=850, scrolling=True)
     st.stop()
 
 # ------------------------------------------------------------------------------

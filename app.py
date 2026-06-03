@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from html import escape
 import httpx
 import streamlit as st
@@ -1750,7 +1750,89 @@ if active == "notebook":
     st.stop()
 
 # ------------------------------------------------------------------------------
-# VIEW: ALL OTHER SELF SECTIONS (Journal, Guide)
+# VIEW: JOURNAL (Roman Numeral XIV) — nhật ký theo ngày, lưu vào bảng journal
+# ------------------------------------------------------------------------------
+if active == "journal":
+    j = SELF_SECTIONS["journal"]
+    render_custom_header(j["num"], "SELF", j["label"], j["desc"])
+
+    admin = get_admin_client()
+    can_write = admin is not None
+
+    # Đọc journal (anon đọc được nhờ RLS) — mới nhất theo ngày trước.
+    try:
+        res = (supabase.table("journal").select("*")
+               .order("entry_date", desc=True).order("id", desc=True).execute())
+        entries = res.data or []
+    except Exception:
+        entries = []
+
+    if not can_write:
+        st.warning("Thiếu SUPABASE_SERVICE_ROLE_KEY — chế độ chỉ-xem, không thêm/sửa/xoá được entry.")
+
+    # --- Entry mới ---
+    with st.expander("➕ Entry mới", expanded=not entries):
+        with st.form("add_journal", clear_on_submit=True):
+            j_date = st.date_input("Ngày", value=date.today())
+            j_body = st.text_area("Nội dung (Markdown)", height=160,
+                                  placeholder="# Reflection\n- Hôm nay đã làm...\n- Insight:")
+            add_ok = st.form_submit_button("💾 Lưu entry", disabled=not can_write, use_container_width=True)
+        if add_ok:
+            if not j_body.strip():
+                st.warning("Nhập nội dung.")
+            elif can_write:
+                admin.table("journal").insert({
+                    "entry_date": j_date.isoformat(),
+                    "content": j_body,
+                }).execute()
+                st.success("Đã lưu entry.")
+                st.rerun()
+
+    # --- Timeline ---
+    if not entries:
+        st.info("Chưa có entry nào. Thêm ở khung trên.")
+    else:
+        for e in entries:
+            eid = int(e["id"])
+            ed = str(e.get("entry_date") or "")
+            content = str(e.get("content") or "")
+            try:
+                disp = date.fromisoformat(ed).strftime("%d/%m/%Y")
+            except ValueError:
+                disp = ed
+            st.markdown(f"""
+            <div class='mc-card' style='margin-bottom:6px;'>
+              <div class='mc-top'>
+                <div class='mc-title'>📅 {escape(disp)}</div>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+            if content.strip():
+                # st.markdown KHÔNG cho raw HTML -> an toàn XSS.
+                st.markdown(content)
+
+            with st.expander("✎ Sửa / Xoá", expanded=False):
+                try:
+                    cur_date = date.fromisoformat(ed)
+                except ValueError:
+                    cur_date = date.today()
+                up_date = st.date_input("Ngày", value=cur_date, key=f"jd_{eid}")
+                up_body = st.text_area("Nội dung (Markdown)", value=content, height=180, key=f"jb_{eid}")
+                a, b = st.columns(2)
+                if a.button("💾 Lưu thay đổi", key=f"jsv_{eid}", disabled=not can_write, use_container_width=True):
+                    admin.table("journal").update({
+                        "entry_date": up_date.isoformat(),
+                        "content": up_body,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    }).eq("id", eid).execute()
+                    st.rerun()
+                if b.button("🗑 Xoá entry", key=f"jdel_{eid}", disabled=not can_write, use_container_width=True):
+                    admin.table("journal").delete().eq("id", eid).execute()
+                    st.rerun()
+    st.stop()
+
+# ------------------------------------------------------------------------------
+# VIEW: ALL OTHER SELF SECTIONS (Guide)
 # ------------------------------------------------------------------------------
 if active in SELF_SECTIONS and active != "memory":
     s = SELF_SECTIONS[active]

@@ -8,6 +8,7 @@ DROP TABLE IF EXISTS obsidian_vault;
 DROP TABLE IF EXISTS ai_spend;
 DROP TABLE IF EXISTS mission_control;
 DROP TABLE IF EXISTS notebook;
+DROP TABLE IF EXISTS journal;
 
 CREATE TABLE obsidian_vault (
     id SERIAL PRIMARY KEY,
@@ -43,6 +44,13 @@ CREATE TABLE notebook (
     updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc', NOW())
 );
 
+CREATE TABLE journal (
+    id SERIAL PRIMARY KEY,
+    entry_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    content TEXT NOT NULL DEFAULT '',
+    updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc', NOW())
+);
+
 -- 2) SEED obsidian_vault ---------------------------------------------
 INSERT INTO obsidian_vault (file_name, file_path, category, updated_at) VALUES
 ('2026-05-18', 'Agentic OS/Memories/2026-05-18.md', 'Recent', '15m ago'),
@@ -73,12 +81,15 @@ ALTER TABLE obsidian_vault  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_spend        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE mission_control ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notebook        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE journal         ENABLE ROW LEVEL SECURITY;
 
 REVOKE INSERT, UPDATE, DELETE ON obsidian_vault  FROM anon;
 REVOKE INSERT, UPDATE, DELETE ON ai_spend        FROM anon;
 REVOKE INSERT, UPDATE, DELETE ON mission_control FROM anon;
 GRANT  SELECT                  ON notebook        TO   anon;
 REVOKE INSERT, UPDATE, DELETE ON notebook        FROM anon;
+GRANT  SELECT                  ON journal         TO   anon;
+REVOKE INSERT, UPDATE, DELETE ON journal         FROM anon;
 
 DROP POLICY IF EXISTS "vault_read_anon" ON obsidian_vault;
 CREATE POLICY "vault_read_anon" ON obsidian_vault
@@ -90,6 +101,10 @@ CREATE POLICY "mission_read_anon" ON mission_control
 
 DROP POLICY IF EXISTS "notebook_read_anon" ON notebook;
 CREATE POLICY "notebook_read_anon" ON notebook
+    FOR SELECT TO anon USING (true);
+
+DROP POLICY IF EXISTS "journal_read_anon" ON journal;
+CREATE POLICY "journal_read_anon" ON journal
     FOR SELECT TO anon USING (true);
 
 -- ai_spend: cố ý KHÔNG có policy cho anon -> anon bị chặn đọc/ghi.

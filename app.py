@@ -1,5 +1,7 @@
 import json
 import os
+import hashlib
+import time
 from datetime import date, datetime, timedelta, timezone
 from html import escape
 import httpx
@@ -294,6 +296,18 @@ AGENTS = {
 }
 
 SELF_SECTIONS = {
+    "agenthq": {
+        "label": "Agent HQ", "icon": "🤖", "match": None,
+        "num": "XVII", "desc": "Visual representation of agent swarm status, floor coordinate logs, and interactive chat line."
+    },
+    "ideas": {
+        "label": "Ideas Board", "icon": "💡", "match": None,
+        "num": "XVIII", "desc": "Premium idea screening pipeline, categories filtering, and status action board."
+    },
+    "youtube": {
+        "label": "YouTube Studio", "icon": "📺", "match": None,
+        "num": "XIX", "desc": "Workspace for creators. Script outline generation, checklist validation, and tweak notes."
+    },
     "goals": {
         "label": "Goals", "icon": "◎", "match": "Goals", 
         "num": "IX", "desc": "System objectives, key metrics, and OKRs. Aligning agency actions with quarterly goals."
@@ -372,8 +386,7 @@ MOCK_SPEND_DATA = [
 def get_obsidian_vault() -> pd.DataFrame:
     try:
         res = supabase.table("obsidian_vault").select("*").execute()
-        if res.data:
-            return pd.DataFrame(res.data)
+        return pd.DataFrame(res.data)
     except Exception:
         pass
     return pd.DataFrame(MOCK_VAULT_DATA)
@@ -381,8 +394,7 @@ def get_obsidian_vault() -> pd.DataFrame:
 def get_mission_control() -> pd.DataFrame:
     try:
         res = supabase.table("mission_control").select("*").order("id").execute()
-        if res.data:
-            return pd.DataFrame(res.data)
+        return pd.DataFrame(res.data)
     except Exception:
         pass
     return pd.DataFrame(MOCK_MISSION_DATA)
@@ -395,8 +407,7 @@ def get_ai_spend(active_agent: str | None = None) -> pd.DataFrame:
             if active_agent:
                 q = q.ilike("model_name", f"%{active_agent}%")
             res = q.order("created_at", desc=True).execute()
-            if res.data:
-                return pd.DataFrame(res.data)
+            return pd.DataFrame(res.data)
         except Exception:
             pass
     
@@ -407,6 +418,635 @@ def get_ai_spend(active_agent: str | None = None) -> pd.DataFrame:
         mask = df["model_name"].str.contains(active_agent, case=False, na=False)
         return df[mask]
     return df
+
+# ==============================================================================
+# FALLBACK LOCAL DATA STORAGE FOR NEW FEATURES
+# ==============================================================================
+def load_ideas_data():
+    try:
+        res = supabase.table("ideas").select("*").order("timestamp", desc=True).execute()
+        return res.data
+    except Exception:
+        try:
+            res = supabase.table("Idea").select("*").order("timestamp", desc=True).execute()
+            return res.data
+        except Exception:
+            pass
+            
+    backup_path = "backups/ideas.json"
+    if os.path.exists(backup_path):
+        try:
+            with open(backup_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+            
+    default_ideas = [
+        {"id": "idea-1", "title": "Auto-sync Obsidian with Telegram Agent", "description": "Trigger an alert on Telegram whenever a new note is added to the vault.", "category": "Experiment", "source": "sage", "status": "pending", "timestamp": datetime.now().isoformat()},
+        {"id": "idea-2", "title": "Build a custom n8n dashboard for token cost tracking", "description": "Render a bar chart of everyday model expenses with direct API calls.", "category": "Build", "source": "max", "status": "approved", "timestamp": datetime.now().isoformat()},
+        {"id": "idea-3", "title": "Create a 5-minute video tutorial explaining OpenClaw setup", "description": "High-retention script outline demonstrating local swarm coordination.", "category": "Content", "source": "nova", "status": "pending", "timestamp": datetime.now().isoformat()}
+    ]
+    os.makedirs("backups", exist_ok=True)
+    with open(backup_path, "w", encoding="utf-8") as f:
+        json.dump(default_ideas, f, ensure_ascii=False, indent=2)
+    return default_ideas
+
+def save_idea(new_idea):
+    try:
+        res = supabase.table("ideas").insert(new_idea).execute()
+        if res.data:
+            return True
+    except Exception:
+        try:
+            res = supabase.table("Idea").insert(new_idea).execute()
+            if res.data:
+                return True
+        except Exception:
+            pass
+            
+    backup_path = "backups/ideas.json"
+    ideas = load_ideas_data()
+    ideas.insert(0, new_idea)
+    try:
+        with open(backup_path, "w", encoding="utf-8") as f:
+            json.dump(ideas, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception:
+        return False
+
+def update_idea_status_db(idea_id, status):
+    try:
+        res = supabase.table("ideas").update({"status": status}).eq("id", idea_id).execute()
+        if res.data:
+            return True
+    except Exception:
+        try:
+            res = supabase.table("Idea").update({"status": status}).eq("id", idea_id).execute()
+            if res.data:
+                return True
+        except Exception:
+            pass
+            
+    backup_path = "backups/ideas.json"
+    ideas = load_ideas_data()
+    for idea in ideas:
+        if idea["id"] == idea_id:
+            idea["status"] = status
+            break
+    try:
+        with open(backup_path, "w", encoding="utf-8") as f:
+            json.dump(ideas, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception:
+        return False
+
+def generate_nova_script(title: str) -> str:
+    vps_url = st.secrets.get("HERMES_API_URL")
+    vps_key = st.secrets.get("HERMES_API_KEY")
+    if not vps_url or not vps_key:
+        return f"""TITLE: {title}
+--------------------------------------------------
+[HOOK]
+(0:00 - 0:30)
+"Chào mừng các bạn đến với kênh! Trong video hôm nay, chúng ta sẽ cùng khám phá cách triển khai tự động hóa quy trình với các AI agent chạy hoàn toàn cục bộ."
+
+[OUTLINE]
+1. Giới thiệu giải pháp tự động hóa.
+2. Cấu hình kết nối dữ liệu.
+3. Cài đặt các Agent trên Agent Floor.
+4. Tích hợp API endpoint.
+5. Chạy thử nghiệm thực tế.
+
+[FULL SCRIPT BODY]
+(Bản thảo kịch bản chi tiết dựa trên tiêu đề: {title})"""
+
+    system_prompt = (
+        "Bạn là NOVA, chuyên gia sáng tạo kịch bản video và nội dung YouTube. "
+        f"Hãy viết một kịch bản video YouTube chi tiết bằng tiếng Việt cho tiêu đề: \"{title}\".\n"
+        "Yêu cầu phản hồi định dạng chính xác như sau (không chứa các ký tự vẽ khung CLI hay lời dẫn giải thích ngoài kịch bản):\n\n"
+        f"TITLE: {title}\n"
+        "--------------------------------------------------\n"
+        "[HOOK]\n"
+        "(0:00 - 0:30)\n"
+        "\"<Viết lời mở đầu cuốn hút, kích thích sự tò mò ở đây>\"\n\n"
+        "[OUTLINE]\n"
+        "1. <Ý chính 1>\n"
+        "2. <Ý chính 2>\n"
+        "3. <Ý chính 3>\n"
+        "4. <Ý chính 4>\n"
+        "5. <Ý chính 5>\n\n"
+        "[FULL SCRIPT BODY]\n"
+        "<Viết bản phác thảo chi tiết nội dung từng phần của kịch bản, nêu rõ các bước hướng dẫn cụ thể>"
+    )
+
+    try:
+        headers = {"Authorization": f"Bearer {vps_key}", "Content-Type": "application/json"}
+        r = httpx.post(f"{vps_url.rstrip('/')}/chat", json={"message": system_prompt}, headers=headers, timeout=180)
+        if r.status_code == 200:
+            raw_reply = r.json().get("reply", "")
+            cleaned = raw_reply.split("\n")
+            cleaned = [line for line in cleaned if not (("Hermes" in line or "NOVA" in line) and ("─" in line or "═" in line))]
+            cleaned = [line.replace("│", "").strip() for line in cleaned]
+            cleaned = [line for line in cleaned if not all(c in "─╭╰╯╮┬┴┼═║╔╗╚╝░▒▓█▄▀■-—_=+*#" for c in line.strip())]
+            reply = "\n".join([l for l in cleaned if l.strip()]).strip()
+            return reply if reply else raw_reply.strip()
+    except Exception:
+        pass
+
+    return f"""TITLE: {title}
+--------------------------------------------------
+[HOOK]
+(0:00 - 0:30)
+"Chào mừng bạn đến với video hướng dẫn. Hôm nay chúng ta sẽ giải quyết bài toán làm thế nào để vận hành tối ưu nhất."
+
+[OUTLINE]
+1. Khái niệm cốt lõi.
+2. Thiết lập cơ sở dữ liệu.
+3. Điều phối các tác vụ.
+4. Đo lường hiệu năng.
+5. Tổng kết và tối ưu.
+
+[FULL SCRIPT BODY]
+(Bản thảo kịch bản chi tiết dựa trên tiêu đề: {title})"""
+
+def generate_seo_articles(keyword: str, transcript: str, prompt_template: str | None = None) -> list[dict]:
+    vps_url = st.secrets.get("HERMES_API_URL")
+    vps_key = st.secrets.get("HERMES_API_KEY")
+    if not vps_url or not vps_key:
+        return [
+            {
+                "title": f"Tại sao {keyword} là chìa khóa chăm sóc sức khỏe chủ động",
+                "slug": f"tai-sao-{keyword}-quan-trong",
+                "excerpt": "Phân tích trích dẫn hữu ích từ kinh nghiệm y khoa...",
+                "content": f"### Nội dung bài viết 1\n\nĐây là bài viết SEO chi tiết về chủ đề {keyword} dựa trên thông tin từ transcript..."
+            },
+            {
+                "title": f"Hướng dẫn thiết lập {keyword} từng bước chi tiết",
+                "slug": f"huong-dan-thiet-lap-{keyword}",
+                "excerpt": "Các bước chuẩn hóa dữ liệu và vận hành Swarm...",
+                "content": f"### Nội dung bài viết 2\n\nHướng dẫn kỹ thuật thực tế để tối ưu {keyword}..."
+            },
+            {
+                "title": f"5 sai lầm phổ biến khi triển khai {keyword}",
+                "slug": f"sai-lam-trien-khai-{keyword}",
+                "excerpt": "Những điểm yếu dễ mắc phải và cách khắc phục...",
+                "content": f"### Nội dung bài viết 3\n\nPhân tích chi tiết và các lời khuyên thiết thực..."
+            },
+            {
+                "title": f"Đánh giá hiệu năng và chi phí của {keyword}",
+                "slug": f"danh-gia-hieu-nang-{keyword}",
+                "excerpt": "Đo lường hiệu quả vận hành thực tế...",
+                "content": f"### Nội dung bài viết 4\n\nBảng so sánh chi phí token và tốc độ phản hồi..."
+            },
+            {
+                "title": f"Tương lai của {keyword} trong chăm sóc sức khỏe 2026",
+                "slug": f"tuong-lai-{keyword}",
+                "excerpt": "Nhận định xu hướng phát triển dài hạn...",
+                "content": f"### Nội dung bài viết 5\n\nTầm nhìn dài hạn và định hướng mở rộng hệ sinh thái..."
+            }
+        ]
+
+    # Ưu tiên prompt do người dùng cấu hình ở tab Skill (chứa {keyword}/{transcript}).
+    # Dùng replace thay vì .format() để prompt tự sửa có thể chứa dấu { } khác mà không lỗi.
+    if prompt_template and prompt_template.strip():
+        prompt = (
+            prompt_template
+            .replace("{keyword}", keyword)
+            .replace("{transcript}", transcript[:1500])
+        )
+    else:
+        prompt = (
+            "Bạn là một chuyên gia viết bài viết SEO chuẩn hóa cho y khoa. "
+            f"Hãy tạo ra 5 tiêu đề bài viết khác nhau, độc đáo và thu hút dựa trên từ khóa: \"{keyword}\" và nội dung transcript sau:\n"
+            f"\"{transcript[:1500]}\"\n\n"
+            "Yêu cầu phản hồi định dạng đúng JSON (chỉ trả về chuỗi JSON thô, không nằm trong dấu nháy markdown hay chứa lời dẫn giải thích), "
+            "là một danh sách (array) gồm 5 object, mỗi object có 4 thuộc tính: \n"
+            "- \"title\": tiêu đề bài viết tiếng Việt cuốn hút chứa từ khóa\n"
+            "- \"slug\": đường dẫn viết liền không dấu ngăn cách bằng gạch ngang\n"
+            "- \"excerpt\": một đoạn trích ngắn 1-2 câu tóm tắt cuốn hút\n"
+            "- \"content\": nội dung bài viết markdown chi tiết khoảng 300 từ (tiếng Việt), có phân bổ từ khóa.\n"
+        )
+
+    try:
+        headers = {"Authorization": f"Bearer {vps_key}", "Content-Type": "application/json"}
+        r = httpx.post(f"{vps_url.rstrip('/')}/chat", json={"message": prompt}, headers=headers, timeout=180)
+        if r.status_code == 200:
+            raw = r.json().get("reply", "")
+            cleaned = raw.strip()
+            if cleaned.startswith("```json"):
+                cleaned = cleaned[7:]
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3]
+            cleaned = cleaned.strip()
+            articles = json.loads(cleaned)
+            if isinstance(articles, list) and len(articles) > 0:
+                return articles
+    except Exception:
+        pass
+
+    return [
+        {
+            "title": f"Tại sao {keyword} là chìa khóa chăm sóc sức khỏe chủ động",
+            "slug": f"tai-sao-{keyword}-quan-trong",
+            "excerpt": "Phân tích trích dẫn hữu ích từ kinh nghiệm y khoa...",
+            "content": f"### Nội dung bài viết 1\n\nĐây là bài viết SEO chi tiết về chủ đề {keyword} dựa trên thông tin từ transcript..."
+        },
+        {
+            "title": f"Hướng dẫn thiết lập {keyword} từng bước chi tiết",
+            "slug": f"huong-dan-thiet-lap-{keyword}",
+            "excerpt": "Các bước chuẩn hóa dữ liệu và vận hành Swarm...",
+            "content": f"### Nội dung bài viết 2\n\nHướng dẫn kỹ thuật thực tế để tối ưu {keyword}..."
+        },
+        {
+            "title": f"5 sai lầm phổ biến khi triển khai {keyword}",
+            "slug": f"sai-lam-trien-khai-{keyword}",
+            "excerpt": "Những điểm yếu dễ mắc phải và cách khắc phục...",
+            "content": f"### Nội dung bài viết 3\n\nPhân tích chi tiết và các lời khuyên thiết thực..."
+        },
+        {
+            "title": f"Đánh giá hiệu năng và chi phí của {keyword}",
+            "slug": f"danh-gia-hieu-nang-{keyword}",
+            "excerpt": "Đo lường hiệu quả vận hành thực tế...",
+            "content": f"### Nội dung bài viết 4\n\nBảng so sánh chi phí token và tốc độ phản hồi..."
+        },
+        {
+            "title": f"Tương lai của {keyword} trong chăm sóc sức khỏe 2026",
+            "slug": f"tuong-lai-{keyword}",
+            "excerpt": "Nhận định xu hướng phát triển dài hạn...",
+            "content": f"### Nội dung bài viết 5\n\nTầm nhìn dài hạn và định hướng mở rộng hệ sinh thái..."
+        }
+    ]
+
+def load_youtube_scripts():
+    try:
+        res = supabase.table("DataStore").select("data").eq("key", "youtube-scripts").execute()
+        if res.data:
+            return res.data[0]["data"]
+        else:
+            return []
+    except Exception:
+        try:
+            res = supabase.table("datastore").select("data").eq("key", "youtube-scripts").execute()
+            if res.data:
+                return res.data[0]["data"]
+            else:
+                return []
+        except Exception:
+            pass
+            
+    backup_path = "backups/youtube_scripts.json"
+    if os.path.exists(backup_path):
+        try:
+            with open(backup_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+            
+    default_scripts = [
+        {
+            "id": "script-1",
+            "title": "How To Build a Public Scoreboard for 7 AI Agents in OpenClaw",
+            "hook": True,
+            "outline": False,
+            "fullScript": False,
+            "status": "pending_review",
+            "category": "ideas",
+            "type": "articles",
+            "notes": ""
+        },
+        {
+            "id": "script-2",
+            "title": "How To Run OpenClaw With Claude and Gemma 4 for $30/Month",
+            "hook": True,
+            "outline": True,
+            "fullScript": True,
+            "status": "pending_review",
+            "category": "ideas",
+            "type": "videos",
+            "notes": ""
+        }
+    ]
+    os.makedirs("backups", exist_ok=True)
+    with open(backup_path, "w", encoding="utf-8") as f:
+        json.dump(default_scripts, f, ensure_ascii=False, indent=2)
+    return default_scripts
+
+def save_youtube_scripts(scripts):
+    try:
+        res = supabase.table("DataStore").select("*").eq("key", "youtube-scripts").execute()
+        if res.data:
+            supabase.table("DataStore").update({"data": scripts}).eq("key", "youtube-scripts").execute()
+        else:
+            supabase.table("DataStore").insert({"key": "youtube-scripts", "data": scripts}).execute()
+        return True
+    except Exception:
+        try:
+            res = supabase.table("datastore").select("*").eq("key", "youtube-scripts").execute()
+            if res.data:
+                supabase.table("datastore").update({"data": scripts}).eq("key", "youtube-scripts").execute()
+            else:
+                supabase.table("datastore").insert({"key": "youtube-scripts", "data": scripts}).execute()
+            return True
+        except Exception:
+            pass
+            
+    backup_path = "backups/youtube_scripts.json"
+    try:
+        with open(backup_path, "w", encoding="utf-8") as f:
+            json.dump(scripts, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception:
+        return False
+
+def load_seo_campaigns():
+    try:
+        res = supabase.table("DataStore").select("data").eq("key", "seo-campaigns").execute()
+        if res.data:
+            return res.data[0]["data"]
+    except Exception:
+        try:
+            res = supabase.table("datastore").select("data").eq("key", "seo-campaigns").execute()
+            if res.data:
+                return res.data[0]["data"]
+        except Exception:
+            pass
+            
+    backup_path = "backups/seo_campaigns.json"
+    if os.path.exists(backup_path):
+        try:
+            with open(backup_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return []
+
+def save_seo_campaigns(campaigns):
+    try:
+        res = supabase.table("DataStore").select("*").eq("key", "seo-campaigns").execute()
+        if res.data:
+            supabase.table("DataStore").update({"data": campaigns}).eq("key", "seo-campaigns").execute()
+        else:
+            supabase.table("DataStore").insert({"key": "seo-campaigns", "data": campaigns}).execute()
+        return True
+    except Exception:
+        try:
+            res = supabase.table("datastore").select("*").eq("key", "seo-campaigns").execute()
+            if res.data:
+                supabase.table("datastore").update({"data": campaigns}).eq("key", "seo-campaigns").execute()
+            else:
+                supabase.table("datastore").insert({"key": "seo-campaigns", "data": campaigns}).execute()
+            return True
+        except Exception:
+            pass
+            
+    backup_path = "backups/seo_campaigns.json"
+    try:
+        with open(backup_path, "w", encoding="utf-8") as f:
+            json.dump(campaigns, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception:
+        return False
+
+def load_seo_transcripts():
+    try:
+        res = supabase.table("DataStore").select("data").eq("key", "seo-transcripts").execute()
+        if res.data:
+            return res.data[0]["data"]
+    except Exception:
+        try:
+            res = supabase.table("datastore").select("data").eq("key", "seo-transcripts").execute()
+            if res.data:
+                return res.data[0]["data"]
+        except Exception:
+            pass
+
+    backup_path = "backups/seo_transcripts.json"
+    if os.path.exists(backup_path):
+        try:
+            with open(backup_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return []
+
+def save_seo_transcripts(transcripts):
+    try:
+        res = supabase.table("DataStore").select("*").eq("key", "seo-transcripts").execute()
+        if res.data:
+            supabase.table("DataStore").update({"data": transcripts}).eq("key", "seo-transcripts").execute()
+        else:
+            supabase.table("DataStore").insert({"key": "seo-transcripts", "data": transcripts}).execute()
+        return True
+    except Exception:
+        try:
+            res = supabase.table("datastore").select("*").eq("key", "seo-transcripts").execute()
+            if res.data:
+                supabase.table("datastore").update({"data": transcripts}).eq("key", "seo-transcripts").execute()
+            else:
+                supabase.table("datastore").insert({"key": "seo-transcripts", "data": transcripts}).execute()
+            return True
+        except Exception:
+            pass
+
+    backup_path = "backups/seo_transcripts.json"
+    try:
+        os.makedirs("backups", exist_ok=True)
+        with open(backup_path, "w", encoding="utf-8") as f:
+            json.dump(transcripts, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception:
+        return False
+
+def create_seo_zip(articles, keyword):
+    import io
+    import zipfile
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+        for idx, art in enumerate(articles):
+            slug = art.get("slug", f"article-{idx+1}")
+            title = art.get("title", f"Article {idx+1}")
+            excerpt = art.get("excerpt", "")
+            content = art.get("content", "")
+            
+            md_content = f"""---
+title: "{title}"
+excerpt: "{excerpt}"
+keyword: "{keyword}"
+date: "{date.today().isoformat()}"
+---
+
+# {title}
+
+{content}
+"""
+            zip_file.writestr(f"{slug}.md", md_content.encode("utf-8"))
+    return zip_buffer.getvalue()
+
+# ------------------------------------------------------------------------------
+# NETLIFY DEPLOY — deploy thật qua REST API (digest deploy), không cần CLI.
+# Tự tạo (hoặc tái dùng) site cho mỗi bài viết rồi đẩy 1 trang HTML/site.
+# ------------------------------------------------------------------------------
+NETLIFY_API = "https://api.netlify.com/api/v1"
+
+def _netlify_token():
+    tok = (st.secrets.get("NETLIFY_AUTH_TOKEN", "") or "").strip()
+    # Bỏ qua placeholder mẫu trong secrets.toml.example
+    if not tok or tok.startswith("<") or tok.lower() in ("your-netlify-token", "your-token"):
+        return None
+    return tok
+
+def _slugify_netlify(text: str) -> str:
+    import re
+    s = re.sub(r"[^a-z0-9]+", "-", (text or "").lower().strip()).strip("-")
+    return (s or "seo-pack")[:50]
+
+def _md_to_html(md_text: str) -> str:
+    # Markdown tối giản -> HTML, escape trước để chống XSS rồi mới thêm thẻ an toàn.
+    import re
+    blocks = []
+    for raw in (md_text or "").split("\n\n"):
+        block = raw.strip()
+        if not block:
+            continue
+        esc = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escape(block))
+        if block.startswith("### "):
+            blocks.append(f"<h3>{esc[4:].lstrip()}</h3>")
+        elif block.startswith("## "):
+            blocks.append(f"<h2>{esc[3:].lstrip()}</h2>")
+        elif block.startswith("# "):
+            blocks.append(f"<h2>{esc[2:].lstrip()}</h2>")
+        else:
+            blocks.append("<p>" + esc.replace("\n", "<br>") + "</p>")
+    return "\n".join(blocks)
+
+def render_article_html(article: dict, keyword: str) -> str:
+    title = article.get("title", "Bài viết")
+    excerpt = article.get("excerpt", "")
+    body = _md_to_html(article.get("content", ""))
+    return f"""<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{escape(title)}</title>
+<meta name="description" content="{escape(excerpt)}">
+<meta name="keywords" content="{escape(keyword)}">
+<style>
+  :root {{ color-scheme: light; }}
+  body {{ margin:0; background:#0b0716; color:#e7e5ef; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; line-height:1.7; }}
+  .wrap {{ max-width:720px; margin:0 auto; padding:64px 22px 96px; }}
+  .kw {{ font-size:12px; letter-spacing:2px; text-transform:uppercase; color:#a855f7; font-weight:700; }}
+  h1 {{ font-size:34px; line-height:1.2; margin:10px 0 14px; color:#fff; }}
+  .excerpt {{ font-size:18px; color:#b9b5c9; font-style:italic; margin:0 0 28px; }}
+  article h2 {{ font-size:22px; color:#fff; margin:30px 0 8px; }}
+  article h3 {{ font-size:18px; color:#d9d5e6; margin:24px 0 6px; }}
+  article p {{ margin:0 0 16px; }}
+  footer {{ margin-top:48px; padding-top:18px; border-top:1px solid rgba(255,255,255,.08); font-size:12px; color:#6f6a83; }}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="kw">{escape(keyword)}</div>
+    <h1>{escape(title)}</h1>
+    <p class="excerpt">{escape(excerpt)}</p>
+    <article>{body}</article>
+    <footer>Generated by Hermes OS · SEO Pipeline · {date.today().isoformat()}</footer>
+  </div>
+</body>
+</html>"""
+
+def _netlify_ensure_site(client, headers, desired_name, slot, logs):
+    # Tái dùng site đã lưu nếu còn tồn tại.
+    if slot and slot.get("id"):
+        r = client.get(f"{NETLIFY_API}/sites/{slot['id']}", headers=headers)
+        if r.status_code == 200:
+            logs.append(f"[Netlify] Tái dùng site: {slot.get('name', slot['id'])}")
+            return r.json()
+        logs.append(f"[Netlify] Site cũ {slot['id']} không còn — tạo site mới.")
+    json_headers = {**headers, "Content-Type": "application/json"}
+    r = client.post(f"{NETLIFY_API}/sites", headers=json_headers, json={"name": desired_name, "force_ssl": True})
+    if r.status_code in (200, 201):
+        site = r.json()
+        logs.append(f"[Netlify] Đã tạo site: {site.get('name')}")
+        return site
+    # Tên bị trùng/không hợp lệ -> để Netlify tự sinh subdomain ngẫu nhiên.
+    if r.status_code in (400, 409, 422):
+        logs.append(f"[Netlify] Tên '{desired_name}' không dùng được ({r.status_code}) — tạo site tên ngẫu nhiên.")
+        r2 = client.post(f"{NETLIFY_API}/sites", headers=json_headers, json={"force_ssl": True})
+        if r2.status_code in (200, 201):
+            site = r2.json()
+            logs.append(f"[Netlify] Đã tạo site: {site.get('name')}")
+            return site
+        raise RuntimeError(f"create site {r2.status_code}: {r2.text[:160]}")
+    raise RuntimeError(f"create site {r.status_code}: {r.text[:160]}")
+
+def _netlify_deploy_files(client, headers, site_id, files, logs):
+    # files: {"/index.html": "<nội dung>"}; digest deploy = snapshot toàn site.
+    digest = {path: hashlib.sha1(content.encode("utf-8")).hexdigest() for path, content in files.items()}
+    r = client.post(
+        f"{NETLIFY_API}/sites/{site_id}/deploys",
+        headers={**headers, "Content-Type": "application/json"},
+        json={"files": digest},
+    )
+    if r.status_code not in (200, 201):
+        raise RuntimeError(f"create deploy {r.status_code}: {r.text[:160]}")
+    deploy = r.json()
+    deploy_id = deploy.get("id")
+    required = set(deploy.get("required", []))
+    for path, content in files.items():
+        if digest[path] in required:
+            up = client.put(
+                f"{NETLIFY_API}/deploys/{deploy_id}/files/{path.lstrip('/')}",
+                headers={**headers, "Content-Type": "application/octet-stream"},
+                content=content.encode("utf-8"),
+            )
+            if up.status_code not in (200, 201):
+                raise RuntimeError(f"upload {path} {up.status_code}: {up.text[:120]}")
+    # Chờ deploy chuyển sang 'ready' (tối đa ~12s).
+    for _ in range(6):
+        if deploy.get("state") == "ready":
+            break
+        time.sleep(2)
+        pr = client.get(f"{NETLIFY_API}/deploys/{deploy_id}", headers=headers)
+        if pr.status_code == 200:
+            deploy = pr.json()
+    return deploy
+
+def deploy_campaign_to_netlify(campaign: dict) -> dict:
+    """Deploy 1 chiến dịch (mỗi bài viết -> 1 site Netlify). Trả về {ok, logs, sites, error}."""
+    token = _netlify_token()
+    logs = []
+    if not token:
+        return {"ok": False, "error": "missing_token",
+                "logs": ["[Netlify] Thiếu NETLIFY_AUTH_TOKEN trong secrets — không thể deploy thật."],
+                "sites": []}
+
+    articles = campaign.get("articles", []) or []
+    keyword = campaign.get("keyword", "")
+    base_slug = _slugify_netlify(campaign.get("slug") or keyword)
+    saved_sites = campaign.get("netlify_sites", []) or []
+    headers = {"Authorization": f"Bearer {token}"}
+
+    logs.append(f"[Netlify] Bắt đầu deploy {len(articles)} site cho từ khóa: {keyword}")
+    results = []
+    with httpx.Client(timeout=60) as client:
+        for i, art in enumerate(articles):
+            slot = saved_sites[i] if i < len(saved_sites) else None
+            desired = f"{base_slug}-{i + 1}"
+            try:
+                site = _netlify_ensure_site(client, headers, desired, slot, logs)
+                deploy = _netlify_deploy_files(client, headers, site["id"], {"/index.html": render_article_html(art, keyword)}, logs)
+                url = site.get("ssl_url") or site.get("url") or f"https://{site.get('name', '')}.netlify.app"
+                state = deploy.get("state", "uploaded")
+                results.append({"id": site["id"], "name": site.get("name", ""), "url": url, "state": state})
+                logs.append(f"[Site {i + 1}: {site.get('name')}] OK -> {url} ({state})")
+            except Exception as e:
+                results.append({"id": (slot or {}).get("id", ""), "name": desired, "url": "", "state": "error", "error": str(e)})
+                logs.append(f"[Site {i + 1}: {desired}] LỖI: {e}")
+
+    ok = any(r["state"] != "error" for r in results)
+    logs.append("[Netlify] Hoàn tất deploy swarm. 🏆" if ok else "[Netlify] Tất cả site đều lỗi.")
+    return {"ok": ok, "logs": logs, "sites": results, "error": None}
 
 # ==============================================================================
 # 6. LAYOUT RENDERING FUNCTIONS
@@ -462,7 +1102,7 @@ def render_vault_card(row) -> None:
 # ==============================================================================
 
 # Keep active states
-active = st.query_params.get("nav", "memory")
+active = st.query_params.get("nav", "agenthq")
 
 with st.sidebar:
     # Top Branding Header
@@ -480,6 +1120,18 @@ with st.sidebar:
     mc_active = " active" if active == "mission" else ""
     st.markdown(f"<a class='nav-link side-item{mc_active}' target='_self' href='?nav=mission'>"
                 f"▦ Mission Control</a>", unsafe_allow_html=True)
+    
+    hq_active = " active" if active == "agenthq" else ""
+    st.markdown(f"<a class='nav-link side-item{hq_active}' target='_self' href='?nav=agenthq'>"
+                f"🤖 Agent HQ</a>", unsafe_allow_html=True)
+
+    ideas_active = " active" if active == "ideas" else ""
+    st.markdown(f"<a class='nav-link side-item{ideas_active}' target='_self' href='?nav=ideas'>"
+                f"💡 Ideas Board</a>", unsafe_allow_html=True)
+
+    yt_active = " active" if active == "youtube" else ""
+    st.markdown(f"<a class='nav-link side-item{yt_active}' target='_self' href='?nav=youtube'>"
+                f"📺 YouTube Studio</a>", unsafe_allow_html=True)
 
     # 2. AGENTS Section
     st.markdown("<div class='sidebar-section-title'>Agents</div>", unsafe_allow_html=True)
@@ -495,6 +1147,8 @@ with st.sidebar:
     # 3. SELF Section
     st.markdown("<div class='sidebar-section-title'>Self</div>", unsafe_allow_html=True)
     for k, s in SELF_SECTIONS.items():
+        if k in ["agenthq", "ideas", "youtube"]:
+            continue
         extra = " active" if active == k else ""
         st.markdown(f"<a class='nav-link side-item{extra}' target='_self' href='?nav={k}'>"
                     f"{s['icon']} {s['label']}</a>", unsafe_allow_html=True)
@@ -630,7 +1284,9 @@ if active in AGENTS:
                     with st.spinner("Hermes is reasoning..."):
                         if url:
                             try:
-                                headers = {"Authorization": f"Bearer {key}"} if key else {}
+                                headers = {"Content-Type": "application/json"}
+                                if key:
+                                    headers["Authorization"] = f"Bearer {key}"
                                 r = httpx.post(f"{url.rstrip('/')}/chat", json={"message": prompt}, headers=headers, timeout=180)
                                 if r.status_code == 401:
                                     reply = ("⚠️ **401 Unauthorized** — `HERMES_API_KEY` không khớp với shim trên VPS.\n\n"
@@ -638,7 +1294,14 @@ if active in AGENTS:
                                              "→ **Settings → Secrets** (`HERMES_API_KEY`) cho khớp, rồi rerun app. Xem `vps/README.md`.")
                                 else:
                                     r.raise_for_status()
-                                    reply = r.json().get("reply", "(empty)")
+                                    raw_reply = r.json().get("reply", "")
+                                    cleaned = raw_reply.split("\n")
+                                    cleaned = [line for line in cleaned if not (("Hermes" in line) and ("─" in line or "═" in line))]
+                                    cleaned = [line.replace("│", "").strip() for line in cleaned]
+                                    cleaned = [line for line in cleaned if not all(c in "─╭╰╯╮┬┴┼═║╔╗╚╝░▒▓█▄▀■-—_=+*#" for c in line.strip())]
+                                    reply = "\n".join([l for l in cleaned if l.strip()]).strip()
+                                    if not reply:
+                                        reply = raw_reply.strip()
                             except Exception as e:
                                 reply = f"⚠️ Hermes API error: {e}"
                         else:
@@ -1392,98 +2055,566 @@ if __name__ == "__main__":
 # VIEW: SEO PIPELINE (Roman Numeral X - Matches Screenshot 4)
 # ------------------------------------------------------------------------------
 if active == "seo":
+    import time
     render_custom_header("X", "SELF", "SEO Pipeline", "Automated high-quality transcript to article SEO engine.")
     
-    # Custom HTML header action buttons bar
+    # CSS overrides for button and container styles to make them extremely premium
     st.markdown("""
-    <div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:1.5rem; justify-content:space-between; align-items:center;">
-        <div style="display:flex; gap:8px;">
-            <a href="#" class="nav-link" style="display:inline-flex; align-items:center; gap:6px; font-weight:600; background:rgba(52,211,153,0.12); border:1px solid rgba(52,211,153,0.25); color:#34d399 !important; padding:8px 16px; border-radius:8px; font-size:13px; text-decoration:none;">
-                ▶ Generate
-            </a>
-            <a href="#" class="nav-link" style="display:inline-flex; align-items:center; gap:6px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); color:#8b92b6 !important; padding:8px 16px; border-radius:8px; font-size:13px; text-decoration:none;">
-                ☁ Deploy
-            </a>
-            <a href="#" class="nav-link" style="display:inline-flex; align-items:center; gap:6px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); color:#8b92b6 !important; padding:8px 16px; border-radius:8px; font-size:13px; text-decoration:none;">
-                🕒 History
-            </a>
-            <a href="#" class="nav-link" style="display:inline-flex; align-items:center; gap:6px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); color:#8b92b6 !important; padding:8px 16px; border-radius:8px; font-size:13px; text-decoration:none;">
-                📚 Transcripts
-            </a>
-            <a href="#" class="nav-link" style="display:inline-flex; align-items:center; gap:6px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); color:#8b92b6 !important; padding:8px 16px; border-radius:8px; font-size:13px; text-decoration:none;">
-                🏆 Skill
-            </a>
+    <style>
+    div.stButton > button, div.stDownloadButton > button {
+        background: linear-gradient(135deg, #a855f7, #7c3aed) !important;
+        color: #ffffff !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        padding: 8px 16px !important;
+        transition: all 0.2s ease-in-out !important;
+        box-shadow: 0 4px 15px rgba(168, 85, 247, 0.25) !important;
+    }
+    div.stButton > button:hover, div.stDownloadButton > button:hover {
+        background: linear-gradient(135deg, #b866ff, #8c4aff) !important;
+        box-shadow: 0 6px 20px rgba(168, 85, 247, 0.4) !important;
+        transform: translateY(-1px);
+    }
+    .log-terminal {
+        background: #090514;
+        border: 1px solid rgba(168, 85, 247, 0.15);
+        border-radius: 8px;
+        padding: 12px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12.5px;
+        color: #34d399;
+        height: 250px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        margin-top: 10px;
+        box-shadow: inset 0 0 10px rgba(0,0,0,0.8);
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    seo_tab = st.query_params.get("seo_tab", "generate")
+    
+    # Define active tab colors
+    tab_styles = {
+        "generate": ("rgba(52,211,153,0.12)", "rgba(52,211,153,0.25)", "#34d399"),
+        "deploy": ("rgba(168,85,247,0.12)", "rgba(168,85,247,0.25)", "#a855f7"),
+        "history": ("rgba(245,158,11,0.12)", "rgba(245,158,11,0.25)", "#fbbf24"),
+        "transcripts": ("rgba(59,130,246,0.12)", "rgba(59,130,246,0.25)", "#60a5fa"),
+        "skill": ("rgba(236,72,153,0.12)", "rgba(236,72,153,0.25)", "#f472b6"),
+        "setup": ("rgba(255,255,255,0.08)", "rgba(255,255,255,0.15)", "#ffffff")
+    }
+
+    def get_tab_style(tab_id):
+        if seo_tab == tab_id:
+            bg, border, text = tab_styles[tab_id]
+            return f"background:{bg}; border:1px solid {border}; color:{text} !important; font-weight:600;"
+        else:
+            return "background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); color:#8b92b6 !important;"
+
+    # Left sub-tabs links
+    left_tabs_html = "".join([
+        f'<a href="?nav=seo&seo_tab={tid}" target="_self" class="nav-link" style="display:inline-flex; align-items:center; gap:6px; padding:8px 16px; border-radius:8px; font-size:13px; text-decoration:none; transition:all 0.2s; {get_tab_style(tid)}">{lbl}</a> '
+        for tid, lbl in [
+            ("generate", "▶ Generate"),
+            ("deploy", "☁ Deploy"),
+            ("history", "🕒 History"),
+            ("transcripts", "📚 Transcripts"),
+            ("skill", "🏆 Skill")
+        ]
+    ])
+
+    # Right action / setup links
+    right_setup_style = get_tab_style("setup")
+    right_buttons_html = f'<a href="?nav=seo&seo_tab=setup" target="_self" class="nav-link" style="display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:8px; font-size:13px; text-decoration:none; transition:all 0.2s; {right_setup_style}">Setup Guide</a>'
+
+    # Render custom tab bar
+    col_nav, col_dl = st.columns([4, 1.2])
+    with col_nav:
+        st.markdown(f"""
+        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+            {left_tabs_html}
+            <div style="width:1px; height:20px; background:rgba(255,255,255,0.08); margin:0 8px;"></div>
+            {right_buttons_html}
         </div>
-        <div style="display:flex; gap:8px;">
-            <a href="#" class="nav-link" style="display:inline-flex; align-items:center; gap:6px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); color:#a5a1c0 !important; padding:8px 14px; border-radius:8px; font-size:13px; text-decoration:none;">
-                Setup Guide
-            </a>
-            <a href="#" class="nav-link" style="display:inline-flex; align-items:center; gap:6px; background:rgba(90,215,230,0.12); border:1px solid rgba(90,215,230,0.25); color:#5ad7e6 !important; padding:8px 14px; border-radius:8px; font-size:13px; text-decoration:none;">
+        """, unsafe_allow_html=True)
+    
+    with col_dl:
+        # Dynamic zip download button for active articles if they exist
+        active_articles = st.session_state.get("seo_active_articles", [])
+        active_keyword = st.session_state.get("seo_active_keyword", "seo-pack")
+        if active_articles:
+            zip_bytes = create_seo_zip(active_articles, active_keyword)
+            st.download_button(
+                label="📥 SEO Pack (.zip)",
+                data=zip_bytes,
+                file_name=f"{st.session_state.get('seo_active_slug', 'seo-pack')}.zip",
+                mime="application/zip",
+                use_container_width=True
+            )
+        else:
+            st.markdown("""
+            <a href="#" class="nav-link" style="display:inline-flex; justify-content:center; width:100%; align-items:center; gap:6px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.04); color:rgba(139,146,182,0.4) !important; padding:8px 14px; border-radius:8px; font-size:13px; text-decoration:none; cursor:not-allowed;">
                 📥 SEO Pack (.zip)
             </a>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("""
-    <div style="background: rgba(30,24,52,0.4); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 22px 22px 5px 22px; margin-bottom:1.5rem;">
-        <h4 style="margin: 0 0 18px 0; font-family: 'Outfit', sans-serif; font-size: 16px; font-weight: 500; color: #ffffff; display: flex; align-items: center; gap: 8px;">
-            <span style="color:#5ad7e6; font-size:14px;">✨</span> Generate 5 unique articles for all 5 sites
-        </h4>
-    """, unsafe_allow_html=True)
-    
-    col_k, col_s = st.columns(2)
-    with col_k:
-        st.text_input("TARGET KEYWORD", value="e.g. hermes mcp server", key="seo_kw")
-    with col_s:
-        st.text_input("FILE SLUG", value="hermes-mcp-server", key="seo_slug")
+            """, unsafe_allow_html=True)
+
+    st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
+
+    # Load resources
+    campaigns = load_seo_campaigns()
+    obsidian_df = get_obsidian_vault()
+
+    # Determine default prompt
+    if "seo_agent_prompt" not in st.session_state:
+        st.session_state["seo_agent_prompt"] = (
+            "Bạn là một chuyên gia viết bài viết SEO chuẩn hóa cho y khoa. "
+            "Hãy tạo ra 5 tiêu đề bài viết khác nhau, độc đáo và thu hút dựa trên từ khóa: \"{keyword}\" và nội dung transcript sau:\n"
+            "\"{transcript}\"\n\n"
+            "Yêu cầu phản hồi định dạng đúng JSON (chỉ trả về chuỗi JSON thô, không nằm trong dấu nháy markdown hay chứa lời dẫn giải thích), "
+            "là một danh sách (array) gồm 5 object, mỗi object có 4 thuộc tính:\n"
+            "- \"title\": tiêu đề bài viết tiếng Việt cuốn hút chứa từ khóa\n"
+            "- \"slug\": đường dẫn viết liền không dấu ngăn cách bằng gạch ngang\n"
+            "- \"excerpt\": một đoạn trích ngắn 1-2 câu tóm tắt cuốn hút\n"
+            "- \"content\": nội dung bài viết markdown chi tiết khoảng 300 từ (tiếng Việt), có phân bổ từ khóa.\n"
+        )
+
+    # --------------------------------------------------------------------------
+    # TAB: GENERATE
+    # --------------------------------------------------------------------------
+    if seo_tab == "generate":
+        st.markdown("""
+        <div style="background: rgba(30,24,52,0.4); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 22px 22px 22px 22px; margin-bottom:1.5rem;">
+            <h4 style="margin: 0 0 18px 0; font-family: 'Outfit', sans-serif; font-size: 16px; font-weight: 500; color: #ffffff; display: flex; align-items: center; gap: 8px;">
+                <span style="color:#34d399; font-size:14px;">✨</span> Generate 5 unique articles for all 5 sites
+            </h4>
+        """, unsafe_allow_html=True)
+
+        col_k, col_s = st.columns(2)
+        with col_k:
+            st.text_input("TARGET KEYWORD", placeholder="e.g. hermes mcp server", key="seo_kw")
+        with col_s:
+            # Simple auto-slug deduction
+            raw_kw = st.session_state.get("seo_kw", "")
+            suggested_slug = raw_kw.lower().strip().replace(" ", "-").replace(".", "")
+            st.text_input("FILE SLUG", value=suggested_slug if raw_kw.strip() else "", placeholder="hermes-mcp-server", key="seo_slug")
+
+        st.markdown("<div style='font-size: 11px; font-weight: 700; color: #5b5478; text-transform: uppercase; letter-spacing: 1.5px; margin: 20px 0 10px 0;'>Source Transcript</div>", unsafe_allow_html=True)
         
-    st.markdown("<div style='font-size: 11px; font-weight: 700; color: #5b5478; text-transform: uppercase; letter-spacing: 1.5px; margin: 20px 0 10px 0;'>Source Transcript</div>", unsafe_allow_html=True)
-    
-    trans_tab = st.radio("Source Transcript Mode", ["PICK EXISTING", "PASTE NEW"], horizontal=True, label_visibility="collapsed")
-    
-    if trans_tab == "PICK EXISTING":
-        transcripts = [
-            {"name": "ai-money-lab-shared", "size": "3.1 KB"},
-            {"name": "openclaw-ai-agent-community", "size": "2.8 KB"},
-            {"name": "telegram-ai-agent", "size": "2.5 KB"},
-            {"name": "best-ai-agent-community", "size": "1.9 KB"},
-            {"name": "how-to-make-money-building-ai-agent", "size": "2.5 KB"},
-            {"name": "how-to-make-money-with-artificial-intelligence", "size": "2.3 KB"},
-            {"name": "openclaw-computer-use", "size": "2.7 KB"}
-        ]
-        
-        selected_trans = st.session_state.get("selected_transcript", "ai-money-lab-shared")
-        
-        # Grid select list
-        for t in transcripts:
-            is_active = (t["name"] == selected_trans)
-            row_bg = "background: rgba(90,215,230,0.12); border-color: rgba(90,215,230,0.3);" if is_active else ""
-            
+        trans_mode = st.radio("Source Transcript Mode", ["PICK EXISTING", "PASTE NEW"], horizontal=True, label_visibility="collapsed")
+
+        selected_transcript_content = ""
+        if trans_mode == "PICK EXISTING":
+            # Transcript đã import (có nội dung thật, lưu ở datastore "seo-transcripts") — ưu tiên dùng.
+            saved_transcripts = load_seo_transcripts()
+            saved_content = {t["file_name"]: t.get("content", "") for t in saved_transcripts}
+
+            # Bổ sung index từ vault (chỉ có tên file, nội dung .md không sync lên cloud).
+            vault_transcripts = list(saved_transcripts)
+            if not obsidian_df.empty:
+                mask = obsidian_df["category"].isin(["Omi", "Notes", "Recent"]) | obsidian_df["file_path"].str.contains("transcript", case=False, na=False)
+                vault_transcripts += obsidian_df[mask].to_dict("records")
+
+            if not vault_transcripts:
+                vault_transcripts = [
+                    {"file_name": "ai-money-lab-shared", "file_path": "Wiki/Transcripts/ai-money-lab-shared.md"},
+                    {"file_name": "openclaw-ai-agent-community", "file_path": "Wiki/Transcripts/openclaw-ai-agent-community.md"},
+                    {"file_name": "telegram-ai-agent", "file_path": "Wiki/Transcripts/telegram-ai-agent.md"},
+                    {"file_name": "best-ai-agent-community", "file_path": "Wiki/Transcripts/best-ai-agent-community.md"}
+                ]
+
+            trans_names = []
+            for t in vault_transcripts:
+                if t["file_name"] not in trans_names:
+                    trans_names.append(t["file_name"])
+            selected_trans_name = st.selectbox("Select transcript file", trans_names, label_visibility="collapsed")
+
+            if selected_trans_name:
+                real_content = saved_content.get(selected_trans_name, "").strip()
+                if real_content:
+                    selected_transcript_content = real_content
+                else:
+                    # Nội dung không có trên cloud (chỉ là index vault) — báo rõ, dùng PASTE NEW để có nội dung thật.
+                    selected_transcript_content = f"Transcript Content for {selected_trans_name}...\nĐây là bản ghi âm chia sẻ về cách xây dựng mô hình chăm sóc sức khỏe chủ động và tích hợp các agent thông minh tự động hóa toàn diện quy trình y tế thực tiễn."
+                    st.caption("⚠️ Nội dung gốc của transcript này không được đồng bộ lên cloud (vault chỉ lưu chỉ mục). Hãy Import lại ở tab Transcripts hoặc dùng PASTE NEW để có nội dung thật.")
+
+                st.markdown(f"""
+                <div style="background: rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.05); padding:10px 14px; border-radius:8px; margin-top:8px; height:120px; overflow-y:auto; font-size:12.5px; color:#a5a1c0; font-family: 'JetBrains Mono', monospace; white-space:pre-wrap;">
+                    {escape(selected_transcript_content)}
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            selected_transcript_content = st.text_area("Source Transcript Payload", placeholder="Paste Zoom/YouTube audio raw transcripts here to parse...", height=120, label_visibility="collapsed")
+
+        st.markdown("</div>", unsafe_allow_html=True) # end container
+
+        st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
+        col_t, col_desc = st.columns([1, 4])
+        with col_t:
+            st.toggle("Auto-deploy after generate", value=True, key="seo_auto_deploy")
+        with col_desc:
+            st.markdown("<div style='font-size: 13px; color: #8b92b6; line-height:1.4; margin-top:2px;'><b>Auto-deploy after generate</b><br>As soon as Claude finishes writing, all 5 sites build + deploy in parallel.</div>", unsafe_allow_html=True)
+
+        st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
+
+        if st.button("🚀 Run SEO Swarm (Generate 5 Articles)", use_container_width=True):
+            if not st.session_state.get("seo_kw", "").strip():
+                st.error("Vui lòng nhập từ khóa mục tiêu (TARGET KEYWORD)!")
+            elif not selected_transcript_content.strip():
+                st.error("Vui lòng chọn hoặc nhập Transcript nguồn!")
+            else:
+                with st.spinner("Đang khởi chạy SEO Swarm và tạo 5 bài viết tối ưu..."):
+                    kw = st.session_state["seo_kw"].strip()
+                    slug = st.session_state.get("seo_slug", "seo-pack").strip()
+                    articles = generate_seo_articles(kw, selected_transcript_content, st.session_state.get("seo_agent_prompt"))
+                    
+                    st.session_state["seo_active_articles"] = articles
+                    st.session_state["seo_active_keyword"] = kw
+                    st.session_state["seo_active_slug"] = slug
+                    
+                    new_camp = {
+                        "id": f"seo-{int(time.time())}",
+                        "keyword": kw,
+                        "slug": slug,
+                        "timestamp": datetime.now().isoformat(),
+                        "articles": articles,
+                        "deployed": False
+                    }
+                    campaigns.insert(0, new_camp)
+                    save_seo_campaigns(campaigns)
+                    
+                    if st.session_state.get("seo_auto_deploy"):
+                        # Đặt cờ để tab Deploy chạy deploy THẬT khi load (tạo site + đẩy bài).
+                        st.session_state["seo_deploy_pending_id"] = new_camp["id"]
+                        st.toast("Sinh bài viết thành công! Bắt đầu deploy tự động...", icon="🚀")
+                        st.query_params["seo_tab"] = "deploy"
+                    else:
+                        st.toast("Tạo 5 bài viết chuẩn SEO thành công!", icon="✅")
+
+                    st.rerun()
+
+        # Display active generated articles below
+        if active_articles:
             st.markdown(f"""
-            <div style="display:flex; justify-content:space-between; align-items:center; padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 6px; {row_bg}">
-                <span style="font-size:13px; font-family:'JetBrains Mono', monospace; color:#e2e8f0;">{t['name']}</span>
-                <span style="font-size:11px; color:#8b92b6;">{t['size']}</span>
+            <div style="margin-top: 25px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px;">
+                <h3 style="font-family:'Outfit', sans-serif; font-size:18px; font-weight:600; color:#ffffff; margin-bottom:15px;">
+                    ✨ Kết quả SEO Swarm của từ khóa: <span style="color:#34d399;">{active_keyword}</span>
+                </h3>
             </div>
             """, unsafe_allow_html=True)
-            
-            if st.button("Pick " + t["name"], key=f"pick_{t['name']}", use_container_width=True):
-                st.session_state["selected_transcript"] = t["name"]
+
+            for idx, art in enumerate(active_articles):
+                with st.expander(f"Bài viết {idx+1}: {art.get('title')}", expanded=(idx==0)):
+                    st.markdown(f"**Slug:** `{art.get('slug')}`")
+                    st.markdown(f"**Trích dẫn ngắn (Excerpt):** *{art.get('excerpt')}*")
+                    st.markdown("---")
+                    st.markdown(art.get("content"))
+
+    # --------------------------------------------------------------------------
+    # TAB: DEPLOY
+    # --------------------------------------------------------------------------
+    elif seo_tab == "deploy":
+        st.markdown("""
+        <div style="background: rgba(30,24,52,0.4); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 22px; margin-bottom:1.5rem;">
+            <h4 style="margin: 0 0 15px 0; font-family: 'Outfit', sans-serif; font-size: 16px; font-weight: 500; color: #ffffff; display: flex; align-items: center; gap: 8px;">
+                <span style="color:#a855f7; font-size:14px;">☁</span> Netlify Funnels Swarm Deployment
+            </h4>
+        """, unsafe_allow_html=True)
+        
+        # Thực thi deploy THẬT khi có yêu cầu (Generate auto-deploy / nút Trigger / Redeploy).
+        pending_id = st.session_state.pop("seo_deploy_pending_id", None)
+        if pending_id:
+            target = next((c for c in campaigns if c["id"] == pending_id), None)
+            if target:
+                with st.spinner("Đang deploy lên Netlify (tạo site + đẩy bài viết)..."):
+                    result = deploy_campaign_to_netlify(target)
+                st.session_state["seo_deploy_result"] = result
+                st.session_state["seo_deploy_campaign_id"] = pending_id
+                st.session_state["seo_deploy_status"] = "success" if result["ok"] else "error"
+                if result["ok"]:
+                    # Lưu site id để redeploy tái dùng (idempotent) + đánh dấu đã deploy.
+                    target["netlify_sites"] = [
+                        {"id": s["id"], "name": s["name"], "url": s["url"]}
+                        for s in result["sites"] if s.get("id")
+                    ]
+                    target["deployed"] = True
+                    save_seo_campaigns(campaigns)
                 st.rerun()
-    else:
-        st.text_area("Source Transcript Payload", placeholder="Paste Zoom/YouTube audio raw transcripts here to parse...")
+
+        status_state = st.session_state.get("seo_deploy_status", "idle")
+        result = st.session_state.get("seo_deploy_result")
+        campaign_id = st.session_state.get("seo_deploy_campaign_id")
+        deploying_camp = next((c for c in campaigns if c["id"] == campaign_id), None) if campaign_id else None
+        token_ready = _netlify_token() is not None
+
+        col_st_left, col_st_right = st.columns([2, 1])
+        with col_st_left:
+            if status_state == "success":
+                st.markdown(f"""
+                <div style="display:flex; align-items:center; gap:10px; color:#34d399; font-size:14px; font-weight:600; margin-bottom:10px;">
+                    <span style="width:10px; height:10px; background:#34d399; border-radius:50%; display:inline-block;"></span>
+                    Đã deploy: <span style="color:#ffffff;">{escape(deploying_camp.get('keyword')) if deploying_camp else 'Chiến dịch'}</span>
+                </div>
+                """, unsafe_allow_html=True)
+            elif status_state == "error":
+                st.markdown("""
+                <div style="color:#f87171; font-size:14px; font-weight:600; margin-bottom:10px;">
+                    Deploy lỗi — xem log bên dưới.
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                <div style="color:#8b92b6; font-size:14px; margin-bottom:10px;">
+                    Trạng thái: <b>Sẵn sàng (Idle)</b>
+                </div>
+                """, unsafe_allow_html=True)
+
+        with col_st_right:
+            if campaigns:
+                if st.button("⚡ Trigger Netlify Build Swarm", key="trigger_deploy", disabled=not token_ready):
+                    st.session_state["seo_deploy_pending_id"] = campaigns[0]["id"]
+                    st.rerun()
+            else:
+                st.warning("Vui lòng tạo bài viết trước khi deploy.")
+
+        if not token_ready:
+            st.warning("Thiếu **NETLIFY_AUTH_TOKEN** trong secrets — thêm token (Streamlit Cloud → Settings → Secrets, hoặc `.streamlit/secrets.toml`) để deploy thật. Hướng dẫn ở tab **Setup Guide**.")
+
+        sites = result.get("sites", []) if result else []
+        total = len(sites)
+        done = sum(1 for s in sites if s.get("state") not in ("error", None))
+        pct_done = int(done / total * 100) if total else 0
+        state_label = "SUCCESS" if status_state == "success" else "ERROR" if status_state == "error" else "IDLE"
+
+        st.markdown(f"""
+        <div style="margin: 10px 0 20px 0;">
+            <div class="mc-bar"><div class="mc-fill" style="width:{pct_done}%; background:linear-gradient(90deg, #a855f7, #6366f1);"></div></div>
+            <div style="display:flex; justify-content:space-between; font-size:12px; color:#a5a1c0; margin-top:5px;">
+                <span>Tiến trình: {pct_done}% ({done}/{total} site)</span>
+                <span>{state_label}</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("<div style='font-size: 11px; font-weight: 700; color: #5b5478; text-transform: uppercase; letter-spacing: 1px;'>Netlify Build Status</div>", unsafe_allow_html=True)
+
+        if sites:
+            for s in sites:
+                ok_site = s.get("state") not in ("error", None)
+                badge_cls = "st-done" if ok_site else "st-todo"
+                badge_txt = s.get("state", "?") if ok_site else "Error"
+                url = s.get("url", "")
+                if url:
+                    link_html = f'<a href="{escape(url)}" target="_blank" style="font-size:11px; color:#5ad7e6; text-decoration:none;">{escape(url)} ↗</a>'
+                else:
+                    link_html = f'<span style="font-size:11px; color:#f87171;">{escape(str(s.get("error", "—"))[:80])}</span>'
+                st.markdown(f"""
+                <div style="display:flex; justify-content:space-between; align-items:center; padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 6px; background: rgba(30, 24, 52, 0.25);">
+                    <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+                        <span style="font-size:13px; font-family:'JetBrains Mono', monospace; color:#e2e8f0;">{escape(str(s.get('name', '—')))}</span>
+                        {link_html}
+                    </div>
+                    <span class="status-badge {badge_cls}" style="font-size: 9px;">{escape(str(badge_txt))}</span>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.caption("Chưa có site nào. Tạo bài viết rồi nhấn Trigger — Netlify sẽ tự tạo 1 site cho mỗi bài và deploy.")
+
+        log_content = "\n".join(result.get("logs", [])) if result else "Terminal offline. Nhấn Trigger để bắt đầu deploy."
+        st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size: 11px; font-weight: 700; color: #5b5478; text-transform: uppercase; letter-spacing: 1px;'>Live Deploy Log</div>", unsafe_allow_html=True)
+        st.markdown(f'<div class="log-terminal">{escape(log_content)}</div>', unsafe_allow_html=True)
+
+    # --------------------------------------------------------------------------
+    # TAB: HISTORY
+    # --------------------------------------------------------------------------
+    elif seo_tab == "history":
+        st.markdown("""
+        <div style="background: rgba(30,24,52,0.4); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 22px; margin-bottom:1.5rem;">
+            <h4 style="margin: 0 0 15px 0; font-family: 'Outfit', sans-serif; font-size: 16px; font-weight: 500; color: #ffffff; display: flex; align-items: center; gap: 8px;">
+                <span style="color:#fbbf24; font-size:14px;">🕒</span> Campaign Execution History
+            </h4>
+        """, unsafe_allow_html=True)
         
-    st.markdown("</div>", unsafe_allow_html=True) # end container
-    
-    st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
-    
-    # Bottom toggle block
-    col_t, col_desc = st.columns([1, 4])
-    with col_t:
-        st.toggle("Auto-deploy after generate", value=True, key="seo_auto_deploy")
-    with col_desc:
-        st.markdown("<div style='font-size: 13px; color: #8b92b6; line-height:1.4; margin-top:2px;'><b>Auto-deploy after generate</b><br>As soon as Claude finishes writing, all 5 sites build + deploy in parallel.</div>", unsafe_allow_html=True)
+        if not campaigns:
+            st.info("Chưa có chiến dịch SEO nào được lưu. Hãy chuyển qua tab Generate để tạo chiến dịch đầu tiên!")
+        else:
+            for idx, c in enumerate(campaigns):
+                st.markdown(f"""
+                <div style="background: rgba(30, 24, 52, 0.45); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 18px; display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:start;">
+                        <div>
+                            <h3 style="font-size: 15px; font-weight: 700; color: #ffffff; margin: 0;">Từ khóa: {escape(c['keyword'])}</h3>
+                            <span style="font-size:11px; color:#8b92b6; font-family:'JetBrains Mono', monospace;">Slug: {escape(c['slug'])} &bull; ID: {c['id']}</span>
+                        </div>
+                        <span class="status-badge {('st-done' if c.get('deployed') else 'st-todo')}" style="font-size:9.5px;">
+                            {('Deployed' if c.get('deployed') else 'Not Deployed')}
+                        </span>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                c_act_1, c_act_2, c_act_3 = st.columns(3)
+                
+                if c_act_1.button("🔍 View Campaign", key=f"hist_view_{c['id']}"):
+                    st.session_state["seo_active_articles"] = c["articles"]
+                    st.session_state["seo_active_keyword"] = c["keyword"]
+                    st.session_state["seo_active_slug"] = c["slug"]
+                    st.toast(f"Đã tải bài viết chiến dịch '{c['keyword']}' vào panel!", icon="📂")
+                    st.query_params["seo_tab"] = "generate"
+                    st.rerun()
+                
+                hist_zip = create_seo_zip(c["articles"], c["keyword"])
+                c_act_2.download_button(
+                    label="📥 Download ZIP",
+                    data=hist_zip,
+                    file_name=f"{c['slug']}.zip",
+                    mime="application/zip",
+                    key=f"hist_dl_{c['id']}",
+                    use_container_width=True
+                )
+                
+                if c_act_3.button("⚡ Redeploy Swarm", key=f"hist_dep_{c['id']}"):
+                    st.session_state["seo_deploy_pending_id"] = c["id"]
+                    st.toast("Bắt đầu deploy lại...", icon="🚀")
+                    st.query_params["seo_tab"] = "deploy"
+                    st.rerun()
+                
+                st.markdown("</div>", unsafe_allow_html=True)
+                
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # --------------------------------------------------------------------------
+    # TAB: TRANSCRIPTS
+    # --------------------------------------------------------------------------
+    elif seo_tab == "transcripts":
+        st.markdown("""
+        <div style="background: rgba(30,24,52,0.4); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 22px; margin-bottom:1.5rem;">
+            <h4 style="margin: 0 0 15px 0; font-family: 'Outfit', sans-serif; font-size: 16px; font-weight: 500; color: #ffffff; display: flex; align-items: center; gap: 8px;">
+                <span style="color:#60a5fa; font-size:14px;">📚</span> Source Transcripts Repository
+            </h4>
+        """, unsafe_allow_html=True)
         
+        # Transcript đã import (nội dung thật, lưu ở datastore) — nguồn pickable cho tab Generate.
+        saved_transcripts = load_seo_transcripts()
+
+        vault_list = []
+        if not obsidian_df.empty:
+            mask = obsidian_df["category"].isin(["Omi", "Notes", "Recent"]) | obsidian_df["file_path"].str.contains("transcript", case=False, na=False)
+            vault_list = obsidian_df[mask].to_dict("records")
+
+        if not saved_transcripts and not vault_list:
+            vault_list = [
+                {"file_name": "ai-money-lab-shared", "file_path": "Wiki/Transcripts/ai-money-lab-shared.md", "updated_at": "2d ago"},
+                {"file_name": "openclaw-ai-agent-community", "file_path": "Wiki/Transcripts/openclaw-ai-agent-community.md", "updated_at": "3d ago"},
+                {"file_name": "telegram-ai-agent", "file_path": "Wiki/Transcripts/telegram-ai-agent.md", "updated_at": "5d ago"}
+            ]
+
+        trans_list = saved_transcripts + vault_list
+
+        with st.expander("➕ Import / Thêm transcript mới", expanded=False):
+            with st.form("add_new_transcript", clear_on_submit=True):
+                t_name = st.text_input("Tên Transcript", placeholder="vd. chia-se-dinh-duong-guthealth")
+                t_text = st.text_area("Nội dung transcript", placeholder="Nhập hoặc dán nội dung bản ghi âm Zoom/YouTube tại đây...", height=120)
+                submit_t = st.form_submit_button("Lưu Transcript")
+                if submit_t:
+                    if not t_name.strip() or not t_text.strip():
+                        st.error("Vui lòng điền đủ tên và nội dung!")
+                    else:
+                        slug = t_name.lower().strip().replace(" ", "-").replace(".", "")
+                        saved_transcripts.insert(0, {
+                            "file_name": t_name.strip(),
+                            "file_path": f"Wiki/Transcripts/{slug}.md",
+                            "content": t_text.strip(),
+                            "updated_at": "Vừa xong"
+                        })
+                        if save_seo_transcripts(saved_transcripts):
+                            st.success(f"Transcript '{t_name}' đã được lưu trữ thành công!")
+                        else:
+                            st.error("Không lưu được transcript (kiểm tra kết nối Supabase / quyền ghi).")
+                        time.sleep(1)
+                        st.rerun()
+
+        st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+        for t in trans_list:
+            st.markdown(f"""
+            <div style="background: rgba(30, 24, 52, 0.45); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 15px; margin-bottom: 10px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <span style="font-size:14px; font-weight:600; color:#ffffff;">{escape(t['file_name'])}.md</span>
+                        <div style="font-size:11px; color:#8b92b6; font-family:'JetBrains Mono', monospace; margin-top:2px;">{escape(t.get('file_path', 'Wiki/Transcripts/'))}</div>
+                    </div>
+                    <span style="font-size:11px; color:#8b92b6;">{escape(t.get('updated_at', 'Vừa xong'))}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # --------------------------------------------------------------------------
+    # TAB: SKILL
+    # --------------------------------------------------------------------------
+    elif seo_tab == "skill":
+        st.markdown("""
+        <div style="background: rgba(30,24,52,0.4); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 22px; margin-bottom:1.5rem;">
+            <h4 style="margin: 0 0 15px 0; font-family: 'Outfit', sans-serif; font-size: 16px; font-weight: 500; color: #ffffff; display: flex; align-items: center; gap: 8px;">
+                <span style="color:#f472b6; font-size:14px;">🏆</span> SEO Swarm agent Prompt Configuration
+            </h4>
+            <p style="color:#a5a1c0; font-size:13px; line-height:1.4; margin-bottom:20px;">
+                Đây là Prompt hệ thống mà Hermes/Nova sử dụng để hướng dẫn mô hình ngôn ngữ sinh 5 bài viết tối ưu từ khoá kết hợp dữ liệu transcript. Thay đổi prompt này sẽ ảnh hưởng trực tiếp tới cấu trúc bài viết và phong cách ngôn từ.
+            </p>
+        """, unsafe_allow_html=True)
+        
+        with st.form("save_prompt_form"):
+            edited_prompt = st.text_area("Hệ thống Agent Prompt (System Prompt)", value=st.session_state["seo_agent_prompt"], height=280)
+            c_p_left, c_p_right = st.columns([3, 1])
+            c_p_left.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
+            save_p = c_p_right.form_submit_button("Lưu Cấu Hình", use_container_width=True)
+            if save_p:
+                st.session_state["seo_agent_prompt"] = edited_prompt
+                st.toast("Cấu hình Agent Prompt đã cập nhật thành công!", icon="✅")
+                time.sleep(1)
+                st.rerun()
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # --------------------------------------------------------------------------
+    # TAB: SETUP GUIDE
+    # --------------------------------------------------------------------------
+    elif seo_tab == "setup":
+        st.markdown("""
+        <div style="background: rgba(30,24,52,0.4); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 22px; margin-bottom:1.5rem;">
+            <h4 style="margin: 0 0 15px 0; font-family: 'Outfit', sans-serif; font-size: 16px; font-weight: 500; color: #ffffff; display: flex; align-items: center; gap: 8px;">
+                <span style="color:#ffffff; font-size:14px;">✦</span> Setup Guide & Architecture
+            </h4>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("""
+        ### Hướng Dẫn Thiết Lập Tự Động Hóa SEO Pipeline
+        
+        Quy trình xử lý tự động (automated transcript-to-article engine) chuyển đổi nội dung âm thanh/hình ảnh thô từ các video Zoom hoặc YouTube thành các bài viết chuẩn SEO được deploy tự động lên hạ tầng của bạn.
+        
+        #### 1. Nguyên lý hoạt động
+        1. **Tải lên Transcript**: Người dùng chọn một tệp văn bản thô ghi âm bài chia sẻ chuyên môn (transcript) trong Obsidian hoặc dán thủ công.
+        2. **Khởi động Swarm**: Hermes/Nova chia dữ liệu lớn thành các phân đoạn thông tin quan trọng.
+        3. **LLM Synthesis**: Sử dụng mô hình ngôn ngữ lớn tối ưu hóa chuẩn SEO của y khoa để tạo 5 bài viết nhắm mục tiêu 5 khía cạnh từ khóa khác nhau.
+        4. **Nén ZIP / Xuất bản**: Mỗi bài viết được render thành một trang HTML tự chứa (self-contained) — cũng tải về được dưới dạng ZIP Markdown (frontmatter chuẩn Hugo/Jekyll/Astro).
+        5. **Deploy Netlify (thật)**: App gọi thẳng Netlify REST API (digest deploy) để **tự tạo 1 site cho mỗi bài viết** rồi đẩy trang HTML lên. Không cần Netlify CLI. Site id được lưu vào chiến dịch nên Redeploy sẽ tái dùng đúng site (idempotent).
+
+        #### 2. Kết nối Netlify
+        Lấy **Personal Access Token** tại Netlify: *User settings → Applications → New access token*, rồi đặt vào `.streamlit/secrets.toml` (hoặc Streamlit Cloud → Settings → Secrets):
+        ```toml
+        NETLIFY_AUTH_TOKEN = "nfp_xxx_personal_access_token"
+
+        # (tùy chọn) Hermes shim để sinh bài bằng LLM thật thay vì bản mẫu:
+        HERMES_API_URL = "https://your-fastapi-shim.vps.com"
+        HERMES_API_KEY = "your-api-secret-key"
+        ```
+        Khi thiếu `NETLIFY_AUTH_TOKEN`, tab **Deploy** sẽ vô hiệu nút và hiện cảnh báo (không deploy giả).
+
+        > ⚠️ **Lưu ý an toàn**: Netlify digest deploy ghi đè **toàn bộ** snapshot của site. App chỉ deploy lên các site do chính nó tạo (mỗi bài 1 site), nên không đụng tới site có sẵn của bạn.
+        """)
+        st.markdown("</div>", unsafe_allow_html=True)
+
     st.stop()
 
 # ------------------------------------------------------------------------------
@@ -1903,9 +3034,969 @@ if active == "guide":
     st.stop()
 
 # ------------------------------------------------------------------------------
+# VIEW: AGENT HQ (Sơ đồ sàn + Chat Drawer)
+# ------------------------------------------------------------------------------
+if active == "agenthq":
+    render_custom_header("XVII", "WORKSPACE", "Agent HQ", "Visual representation of agent floor coordinate logs, status check, and interactive chat line.")
+    import time
+    
+    # 1. Các Agent Định nghĩa
+    AGENT_FLOOR_DEFS = {
+        "max": {"name": "MAX", "emoji": "🎩", "role": "CEO CORNER", "status": "online", "task": "Coordinating Agent Floor operations.", "glow": "amber-500", "left": "70%", "top": "22%"},
+        "sage": {"name": "SAGE", "emoji": "🧙‍♂️", "role": "RESEARCH BAY", "status": "online", "task": "Analyzing queries on CTR retention.", "glow": "emerald-500", "left": "12%", "top": "55%"},
+        "knox": {"name": "KNOX", "emoji": "🛡️", "role": "OPS DESK", "status": "working", "task": "DEX transactions checked. Liquidity stable.", "glow": "sky-500", "left": "41%", "top": "55%"},
+        "nova": {"name": "NOVA", "emoji": "🚀", "role": "CREATIVE HUB", "status": "idle", "task": "Drafting outline for low budget setups.", "glow": "rose-500", "left": "70%", "top": "55%"},
+        "pixel": {"name": "PIXEL", "emoji": "👾", "role": "DESIGN LAB", "status": "online", "task": "Exporting matching CSS design tokens.", "glow": "purple-500", "left": "12%", "top": "22%"},
+        "hermes": {"name": "HERMES", "emoji": "⚡", "role": "HERMES DESK", "status": "working", "task": "FastAPI shim active on Hostinger VPS.", "glow": "emerald-500", "left": "41%", "top": "22%"}
+    }
+    
+    # Lấy chat_agent từ query params hoặc state
+    chat_agent = st.query_params.get("chat_agent")
+    
+    # Setup columns
+    if chat_agent and chat_agent in AGENT_FLOOR_DEFS:
+        col_floor, col_chat = st.columns([1.8, 1.0])
+    else:
+        col_floor = st.container()
+        col_chat = None
+        
+    with col_floor:
+        # Nhúng CSS styling phục vụ sàn 2D Agent Floor
+        floor_css = """
+        <style>
+        .floor-canvas {
+            position: relative;
+            width: 100%;
+            height: 520px;
+            background: #090715;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+            background-image: radial-gradient(rgba(255,255,255,0.03) 1.2px, transparent 1.2px);
+            background-size: 24px 24px;
+        }
+        .floor-banner {
+            position: absolute;
+            top: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(30, 24, 52, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            padding: 6px 16px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            z-index: 100;
+        }
+        .floor-banner-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #10b981;
+            animation: pulse-dot 1.5s infinite;
+        }
+        @keyframes pulse-dot {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 5px rgba(16, 185, 129, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+        .floor-banner-text {
+            font-size: 10px;
+            font-weight: 700;
+            color: #a5a1c0;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        .agent-node {
+            position: absolute;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transition: all 0.3s ease;
+            z-index: 10;
+        }
+        .agent-node:hover {
+            transform: scale(1.03);
+        }
+        .speech-bubble {
+            margin-bottom: 12px;
+            background: rgba(26, 20, 44, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            padding: 8px 12px;
+            max-width: 190px;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            position: relative;
+            backdrop-filter: blur(8px);
+        }
+        .speech-bubble-text {
+            font-size: 11.5px;
+            color: #d8d4e6;
+            line-height: 1.4;
+            font-weight: 400;
+        }
+        .speech-bubble-arrow {
+            width: 8px;
+            height: 8px;
+            background: rgba(26, 20, 44, 0.85);
+            border-right: 1px solid rgba(255, 255, 255, 0.06);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            position: absolute;
+            bottom: -5px;
+            left: 50%;
+            transform: translateX(-50%) rotate(45deg);
+        }
+        .agent-box {
+            width: 150px;
+            background: rgba(30, 24, 52, 0.45);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+        .agent-box:hover {
+            background: rgba(45, 35, 75, 0.6);
+        }
+        .agent-avatar-box {
+            width: 42px;
+            height: 42px;
+            border-radius: 10px;
+            background: #090715;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            position: relative;
+            box-shadow: inset 0 2px 5px rgba(0,0,0,0.5);
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            position: absolute;
+            bottom: -2px;
+            right: -2px;
+            border: 1.5px solid #090715;
+            box-shadow: 0 0 6px rgba(0,0,0,0.8);
+        }
+        .status-dot.online { background: #10b981; }
+        .status-dot.working { background: #0ea5e9; }
+        .status-dot.idle { background: #f59e0b; }
+        .status-dot.offline { background: #6b7280; }
+        
+        .agent-box-name {
+            font-weight: 700;
+            font-size: 13px;
+            color: #ffffff;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+        .agent-box-role {
+            font-size: 9px;
+            font-weight: 700;
+            color: #a5a1c0;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+        .glow-max:hover { border-color: rgba(245, 158, 11, 0.45) !important; box-shadow: 0 0 15px rgba(245, 158, 11, 0.15) !important; }
+        .glow-sage:hover { border-color: rgba(16, 185, 129, 0.45) !important; box-shadow: 0 0 15px rgba(16, 185, 129, 0.15) !important; }
+        .glow-knox:hover { border-color: rgba(14, 165, 233, 0.45) !important; box-shadow: 0 0 15px rgba(14, 165, 233, 0.15) !important; }
+        .glow-nova:hover { border-color: rgba(244, 63, 94, 0.45) !important; box-shadow: 0 0 15px rgba(244, 63, 94, 0.15) !important; }
+        .glow-pixel:hover { border-color: rgba(168, 85, 247, 0.45) !important; box-shadow: 0 0 15px rgba(168, 85, 247, 0.15) !important; }
+        .glow-hermes:hover { border-color: rgba(16, 185, 129, 0.45) !important; box-shadow: 0 0 15px rgba(16, 185, 129, 0.15) !important; }
+        
+        .legend-bar {
+            position: absolute;
+            bottom: 16px;
+            left: 16px;
+            background: rgba(10, 7, 21, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 6px 12px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 10px;
+            font-weight: 700;
+            color: #8a84a6;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            backdrop-filter: blur(8px);
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .legend-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+        }
+        </style>
+        """
+        st.html(floor_css)
+        
+        # Build floor HTML content
+        agents_html = ""
+        for k, a in AGENT_FLOOR_DEFS.items():
+            act_task = a["task"]
+            status_cls = a["status"]
+            active_border = "border-color: rgba(90, 215, 230, 0.45) !important; box-shadow: 0 0 15px rgba(90, 215, 230, 0.2) !important; background: rgba(45, 35, 75, 0.65);" if chat_agent == k else ""
+            
+            agents_html += f"""
+            <div class="agent-node" style="left: {a['left']}; top: {a['top']};">
+                <div class="speech-bubble">
+                    <div class="speech-bubble-text">{escape(act_task)}</div>
+                    <div class="speech-bubble-arrow"></div>
+                </div>
+                <a href="?nav=agenthq&chat_agent={k}" target="_self" style="text-decoration: none;">
+                    <div class="agent-box glow-{k}" style="{active_border}">
+                        <div class="agent-avatar-box">
+                            {a['emoji']}
+                            <span class="status-dot {status_cls}"></span>
+                        </div>
+                        <div class="agent-box-name">{a['name']}</div>
+                        <div class="agent-box-role">{a['role']}</div>
+                    </div>
+                </a>
+            </div>
+            """
+            
+        floor_html = f"""
+        <div class="floor-canvas">
+            <div class="floor-banner">
+                <span class="floor-banner-dot"></span>
+                <span class="floor-banner-text">MAX HQ - AGENT FLOOR</span>
+                <span class="floor-banner-dot"></span>
+            </div>
+            {agents_html}
+            <div class="legend-bar">
+                <div class="legend-item"><span class="legend-dot" style="background:#0ea5e9;"></span>Working</div>
+                <div class="legend-item"><span class="legend-dot" style="background:#f59e0b;"></span>Idle</div>
+                <div class="legend-item"><span class="legend-dot" style="background:#10b981;"></span>Online</div>
+                <div class="legend-item"><span class="legend-dot" style="background:#6b7280;"></span>Offline</div>
+            </div>
+        </div>
+        """
+        st.html(floor_html)
+        
+        # Thêm các nút chat nhanh ở dưới
+        st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
+        cols_btn = st.columns(6)
+        for i, (k, a) in enumerate(AGENT_FLOOR_DEFS.items()):
+            btn_style = "border-color: rgba(90, 215, 230, 0.45) !important;" if chat_agent == k else ""
+            btn_html = f"""
+            <a href="?nav=agenthq&chat_agent={k}" target="_self" style="text-decoration: none; width: 100%;">
+                <div style="background: rgba(30, 24, 52, 0.45); border: 1px solid rgba(255,255,255,0.06); padding: 8px 12px; border-radius: 8px; text-align: center; color: #d8d4e6; font-size: 11.5px; font-weight: 700; transition: all 0.2s; cursor: pointer; {btn_style}" onmouseover="this.style.background='rgba(45,35,75,0.6)'; this.style.color='#ffffff';" onmouseout="this.style.background='rgba(30,24,52,0.45)'; this.style.color='#d8d4e6';">
+                    {a['emoji']} Chat with {a['name']}
+                </div>
+            </a>
+            """
+            cols_btn[i].html(btn_html)
+            
+    if col_chat:
+        with col_chat:
+            sel_agent = AGENT_FLOOR_DEFS[chat_agent]
+            
+            # Header chat drawer
+            st.html(f"""
+            <div style="background: rgba(30, 24, 52, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; backdrop-filter: blur(10px);">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div style="font-size: 26px;">{sel_agent['emoji']}</div>
+                    <div>
+                        <div style="font-weight: 700; font-size: 14.5px; color: #ffffff; line-height: 1.2;">{sel_agent['name']}</div>
+                        <div style="font-size: 9.5px; color: #a5a1c0; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;">{sel_agent['role']}</div>
+                    </div>
+                </div>
+                <a href="?nav=agenthq" target="_self" style="text-decoration: none; font-size: 16px; color: #8a84a6 !important; transition: all 0.2s;" onmouseover="this.style.color='#ffffff';" onmouseout="this.style.color='#8a84a6';">✕</a>
+            </div>
+            """)
+            
+            # Lịch sử chat trong session_state
+            if "chat_history" not in st.session_state:
+                st.session_state.chat_history = {}
+                
+            if chat_agent not in st.session_state.chat_history:
+                st.session_state.chat_history[chat_agent] = [
+                    {"role": "assistant", "content": f"Greetings! I am {sel_agent['name']} ({sel_agent['role']}). How can I assist you with our operations today?"}
+                ]
+                
+            chat_container = st.container(height=380)
+            with chat_container:
+                for m in st.session_state.chat_history[chat_agent]:
+                    with st.chat_message(m["role"]):
+                        st.markdown(m["content"])
+                        
+            user_msg = st.chat_input(f"Message {sel_agent['name']}...")
+            if user_msg:
+                st.session_state.chat_history[chat_agent].append({"role": "user", "content": user_msg})
+                
+                with chat_container:
+                    with st.chat_message("user"):
+                        st.markdown(user_msg)
+                        
+                with chat_container:
+                    with st.chat_message("assistant"):
+                        with st.spinner(f"{sel_agent['name']} is responding..."):
+                            agent_response = ""
+                            vps_url = st.secrets.get("HERMES_API_URL")
+                            vps_key = st.secrets.get("HERMES_API_KEY")
+                            
+                            is_ai_agent = chat_agent in ["hermes", "max", "sage", "knox", "nova", "pixel"]
+                            
+                            # 1) AI AGENTS (Hermes & Simulated Personas using VPS API)
+                            if is_ai_agent and vps_url and vps_key:
+                                if chat_agent == "hermes":
+                                    api_msg = user_msg
+                                else:
+                                    roleplay_prompts = {
+                                        "max": "Bạn là MAX (CEO Corner), người điều phối dự án y khoa 'Bác sĩ chính mình'. Hãy trả lời tin nhắn sau của người dùng bằng tiếng Việt với phong thái tự tin, tầm nhìn chiến lược và định hướng quản lý:",
+                                        "sage": "Bạn là SAGE (Research Bay), nhà nghiên cứu thông tin y khoa của dự án 'Bác sĩ chính mình'. Hãy phân tích và trả lời tin nhắn sau của người dùng bằng tiếng Việt dựa trên kiến thức y học, chế độ ăn uống, dinh dưỡng và các bằng chứng khoa học cụ thể:",
+                                        "knox": "Bạn là KNOX (Ops Desk), điều hành kỹ thuật và dữ liệu của hệ thống 'Bác sĩ chính mình'. Hãy trả lời tin nhắn sau của người dùng bằng tiếng Việt tập trung vào các giải pháp kỹ thuật, cơ sở dữ liệu Supabase, MCP sync và vận hành hệ thống:",
+                                        "nova": "Bạn là NOVA (Creative Hub), chuyên gia sáng tạo nội dung, kịch bản video YouTube và bài viết SEO của dự án 'Bác sĩ chính mình'. Hãy trả lời tin nhắn sau của người dùng bằng tiếng Việt với sự hào hứng, tập trung vào ý tưởng làm nội dung, kịch bản video hoặc chiến dịch truyền thông y khoa chủ động:",
+                                        "pixel": "Bạn là PIXEL (Design Lab), nhà thiết kế UI/UX và CSS của dashboard 'Agentic OS'. Hãy trả lời tin nhắn sau của người dùng bằng tiếng Việt tập trung vào khía cạnh thiết kế giao diện, trải nghiệm người dùng, CSS, layout Glassmorphism và thẩm mỹ ứng dụng:"
+                                    }
+                                    prefix = roleplay_prompts.get(chat_agent, "")
+                                    api_msg = f"{prefix}\n\"{user_msg}\""
+                                    
+                                try:
+                                    headers = {"Authorization": f"Bearer {vps_key}", "Content-Type": "application/json"}
+                                    r = httpx.post(f"{vps_url.rstrip('/')}/chat", json={"message": api_msg}, headers=headers, timeout=180)
+                                    if r.status_code == 401:
+                                        agent_response = ("⚠️ **401 Unauthorized** — `HERMES_API_KEY` không khớp với shim trên VPS.\n\n"
+                                                         "Sửa: copy đúng key trong `/root/.hermes/hermes-api.env` (VPS) vào Streamlit Cloud "
+                                                         "→ **Settings → Secrets** (`HERMES_API_KEY`) cho khớp, rồi rerun app. Xem `vps/README.md`.")
+                                    else:
+                                        r.raise_for_status()
+                                        raw_reply = r.json().get("reply", "")
+                                        
+                                        if chat_agent == "hermes":
+                                            cleaned = raw_reply.split("\n")
+                                            cleaned = [line for line in cleaned if not (("Hermes" in line) and ("─" in line or "═" in line))]
+                                            cleaned = [line.replace("│", "").strip() for line in cleaned]
+                                            cleaned = [line for line in cleaned if not all(c in "─╭╰╯╮┬┴┼═║╔╗╚╝░▒▓█▄▀■-—_=+*#" for c in line.strip())]
+                                            agent_response = "\n".join([l for l in cleaned if l.strip()]).strip()
+                                            if not agent_response:
+                                                agent_response = raw_reply.strip()
+                                        else:
+                                            agent_response = raw_reply.strip()
+                                            
+                                except Exception as e:
+                                    # Hiển thị thông báo nhỏ cảnh báo kết nối
+                                    err_msg = str(e)
+                                    if "504" in err_msg or "Timeout" in err_msg:
+                                        display_err = "Timeout/Phản hồi chậm"
+                                    else:
+                                        display_err = err_msg[:40] + "..." if len(err_msg) > 40 else err_msg
+                                        
+                                    st.toast(f"⚠️ Kết nối AI gián đoạn ({display_err}). Đang dùng phản hồi dự phòng.", icon="⚠️")
+                                    
+                                    # Fallback tiếng Việt đúng vai trò của từng agent
+                                    if chat_agent == "max":
+                                        agent_response = f"Tôi là MAX (CEO Corner). Tôi đã ghi nhận yêu cầu của bạn: \"{user_msg}\". Hiện tại kết nối đến máy chủ AI đang gặp sự cố ({display_err}), nhưng tôi sẽ thảo luận với Sage và Knox để điều phối hoạt động ngay khi hệ thống ổn định trở lại."
+                                    elif chat_agent == "sage":
+                                        agent_response = f"Tôi là SAGE (Research Bay). Về yêu cầu tìm kiếm: \"{user_msg}\", tôi rất muốn tra cứu các tài liệu y khoa mới nhất cho bạn. Do kết nối AI đang gián đoạn ({display_err}), dưới đây là phân tích sơ bộ của tôi: chế độ ăn uống đóng vai trò then chốt đối với gan nhiễm mỡ. Bạn nên khuyên bệnh nhân/người dùng hạn chế thực phẩm nhiều đường fructozơ, đồ chiên rán, và bổ sung nhiều rau xanh, omega-3, kết hợp tập thể thao đều đặn. Chi tiết nghiên cứu cụ thể, tôi sẽ cập nhật thêm khi hệ thống kết nối lại."
+                                    elif chat_agent == "knox":
+                                        agent_response = f"Tôi là KNOX (Ops Desk). Trạng thái cơ sở dữ liệu Supabase vẫn đang ỔN ĐỊNH. Đã ghi nhận lệnh \"{user_msg}\" của bạn. Kết nối AI đến VPS tạm thời gặp lỗi ({display_err}), hệ thống kỹ thuật đang tự động ghi nhận nhật ký lỗi để khắc phục."
+                                    elif chat_agent == "nova":
+                                        agent_response = f"Chào bạn! Tôi là NOVA. Ý tưởng phát triển nội dung về \"{user_msg}\" thực sự rất tiềm năng cho các video chia sẻ kiến thức sức khỏe chủ động của chúng ta. Hiện kết nối AI đang bị gián đoạn ({display_err}), tôi đề xuất outline kịch bản nhanh: 1. Hook nhấn mạnh mối nguy hiểm thầm lặng của thói quen ăn uống xấu gây gan nhiễm mỡ; 2. Phân tích 3 loại thực phẩm tàn phá gan nhanh nhất; 3. Gợi ý 3 thực phẩm vàng giải độc gan."
+                                    elif chat_agent == "pixel":
+                                        agent_response = f"Tôi là PIXEL. Yêu cầu thiết kế liên quan đến \"{user_msg}\" đã được ghi nhận. Kết nối máy chủ AI đang bị gián đoạn ({display_err}), tôi đang tiến hành kiểm tra các token màu sắc và cấu trúc CSS Glassmorphism thủ công."
+                                    elif chat_agent == "hermes":
+                                        agent_response = f"Tôi là HERMES. Kết nối AI VPS hiện tại gặp lỗi gián đoạn ({display_err}). Vui lòng kiểm tra lại dịch vụ FastAPI shim trên Hostinger VPS hoặc kết nối mạng."
+                                    else:
+                                        agent_response = f"Đã ghi nhận tin nhắn: \"{user_msg}\". (Đang hoạt động ngoại tuyến do lỗi kết nối AI: {display_err})"
+                                    
+                            # 2) OPENCLAW (Real Gateway)
+                            elif chat_agent == "openclaw":
+                                o_url = st.secrets.get("OPENCLAW_URL")
+                                if o_url:
+                                    try:
+                                        headers = {"Content-Type": "application/json"}
+                                        r = httpx.post(f"{o_url.rstrip('/')}/api/chat", json={"agentId": "openclaw", "message": user_msg}, headers=headers, timeout=30)
+                                        if r.status_code == 200:
+                                            data = r.json()
+                                            agent_response = data.get("response", data.get("reply", ""))
+                                        else:
+                                            agent_response = f"[OpenClaw Swarm Gateway] Dispatched checklist. Swarm coordinator online at {o_url}. Status: {r.status_code}."
+                                    except Exception as e:
+                                        agent_response = f"[OpenClaw Swarm Gateway] Dispatched checklist. Swarm coordinator online at {o_url}. Node callback pending: {e}."
+                                else:
+                                    agent_response = f"OpenClaw swarm coordinator: \"{user_msg}\". (Live gateway connection pending OPENCLAW_URL configuration in secrets)."
+                                    
+                            # 3) FALLBACK (If API Offline or Unconfigured)
+                            else:
+                                time.sleep(0.5)
+                                if chat_agent == "max":
+                                    agent_response = f"Tôi là MAX (CEO Corner). Tôi đã ghi nhận yêu cầu của bạn: \"{user_msg}\". Hiện tại hệ thống AI đang ngoại tuyến, nhưng tôi sẽ thảo luận với Sage và Knox để phân phối băng thông xử lý ngay khi hệ thống kết nối lại."
+                                elif chat_agent == "sage":
+                                    agent_response = f"Tôi là SAGE (Research Bay). Về yêu cầu: \"{user_msg}\", tôi rất muốn tra cứu các tài liệu y khoa và nghiên cứu mới nhất cho bạn. Do kết nối AI ngoại tuyến, bạn có thể tham khảo các tài liệu trong Obsidian Vault hoặc thử lại sau nhé."
+                                elif chat_agent == "knox":
+                                    agent_response = f"Trạng thái hệ thống: ỔN ĐỊNH. Knox (Ops Desk) đã ghi nhận lệnh: \"{user_msg}\". Các bể thanh khoản và dữ liệu Supabase hoạt động tốt. Kết nối AI ngoại tuyến, hệ thống đang lưu log chờ xử lý."
+                                elif chat_agent == "nova":
+                                    agent_response = f"Tôi là NOVA! Ý tưởng về \"{user_msg}\" rất hấp dẫn để sản xuất nội dung video hoặc bài viết SEO y khoa cho dự án 'Bác sĩ chính mình'. Tiếc là hệ thống AI đang ngoại tuyến, khi online chúng ta sẽ lập tức lên outline chi tiết nhé!"
+                                elif chat_agent == "pixel":
+                                    agent_response = f"Tôi là PIXEL. Yêu cầu của bạn: \"{user_msg}\" liên quan đến thiết kế. Tôi đang tối ưu hóa các biến CSS và layout Glassmorphism cho ứng dụng. Rất mong hệ thống AI sớm kết nối lại."
+                                elif chat_agent == "hermes":
+                                    agent_response = f"Tôi là HERMES. Tin nhắn của bạn: \"{user_msg}\". Kết nối VPS ngoại tuyến hoặc thiếu cấu hình API key trong secrets."
+                                else:
+                                    agent_response = f"Đã ghi nhận tin nhắn: \"{user_msg}\". Tôi đang hoạt động ngoại tuyến."
+                                    
+                            st.markdown(agent_response)
+                            
+                st.session_state.chat_history[chat_agent].append({"role": "assistant", "content": agent_response})
+                st.rerun()
+
+    st.stop()
+
+# ------------------------------------------------------------------------------
+# VIEW: IDEAS BOARD (Roman Numeral XVIII)
+# ------------------------------------------------------------------------------
+if active == "ideas":
+    import time
+    
+    @st.dialog("Tạo ý tưởng mới")
+    def create_new_idea_dialog():
+        with st.form("new_idea_form", clear_on_submit=True):
+            title = st.text_input("Tiêu đề", placeholder="vd. Auto-standup summary email...", key="new_idea_title")
+            desc = st.text_area("Mô tả ý tưởng", placeholder="Mô tả chi tiết ý tưởng hoạt động...", key="new_idea_desc")
+            
+            c_cat, c_src = st.columns(2)
+            category = c_cat.selectbox("Category", ["Content", "Experiment", "Thread", "Build", "General"], index=0)
+            source = c_src.selectbox("Source", ["user", "max", "sage", "knox", "nova", "pixel"], index=0)
+            
+            submitted = st.form_submit_button("Lưu ý tưởng", use_container_width=True)
+            if submitted:
+                if not title.strip():
+                    st.error("Tiêu đề không được bỏ trống.")
+                else:
+                    new_idea = {
+                        "id": f"idea-{int(time.time())}",
+                        "title": title.strip(),
+                        "description": desc.strip() or None,
+                        "category": category,
+                        "source": source,
+                        "status": "pending",
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    if save_idea(new_idea):
+                        st.success("Đã lưu ý tưởng mới thành công!")
+                        time.sleep(0.5)
+                        st.rerun()
+                    else:
+                        st.error("Lỗi khi lưu ý tưởng.")
+                        
+    ideas_list = load_ideas_data()
+    pending_count = sum(1 for i in ideas_list if i.get("status") == "pending" or not i.get("status"))
+    total_count = len(ideas_list)
+    
+    st.markdown("""
+    <style>
+    .ideas-header-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 24px;
+        flex-wrap: wrap;
+        gap: 15px;
+    }
+    .ideas-title-box {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .ideas-title-text {
+        font-family: 'Outfit', sans-serif;
+        font-size: 28px;
+        font-weight: 700;
+        color: #ffffff;
+        margin: 0;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    col_h_left, col_h_right = st.columns([2, 1])
+    with col_h_left:
+        st.markdown(f"""
+        <div class="ideas-title-box">
+            <span style="font-size: 28px; color: #f59e0b;">💡</span>
+            <h1 class="ideas-title-text" style="display:inline; margin-left: 5px;">Ideas Board</h1>
+        </div>
+        <p style="color: #8a84a6; font-size:13.5px; margin: 4px 0 0 0; font-weight:300;">
+            {pending_count} pending &bull; {total_count} total
+        </p>
+        """, unsafe_allow_html=True)
+    with col_h_right:
+        st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+        if st.button("➕ Add Idea", key="add_idea_btn_st", use_container_width=True):
+            create_new_idea_dialog()
+            
+    st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
+    
+    ideas_filter = st.query_params.get("ideas_filter", "active")
+    ideas_cat_filter = st.query_params.get("ideas_cat_filter", "All Categories")
+    
+    c_filt_left, c_filt_right = st.columns([3.2, 1.0])
+    with c_filt_left:
+        tabs_lbl = ["Active", "All", "Approved", "Done", "Rejected"]
+        tabs_ids = ["active", "all", "approved", "done", "rejected"]
+        cols_t = st.columns(5)
+        for idx, (lbl, tid) in enumerate(zip(tabs_lbl, tabs_ids)):
+            cnt = 0
+            for idea in ideas_list:
+                matches_cat = (ideas_cat_filter == "All Categories" or idea.get("category", "").lower() == ideas_cat_filter.lower())
+                if not matches_cat:
+                    continue
+                if tid == "all":
+                    cnt += 1
+                elif tid == "active":
+                    if idea.get("status") == "pending" or not idea.get("status"):
+                        cnt += 1
+                else:
+                    if idea.get("status") == tid:
+                        cnt += 1
+                        
+            active_btn_style = "background: rgba(90, 200, 220, 0.15) !important; border-color: rgba(90, 215, 230, 0.4) !important; color:#ffffff !important;" if ideas_filter == tid else ""
+            badge_style = "background: rgba(16, 185, 129, 0.2); color:#10b981;" if ideas_filter == tid else "background: rgba(255,255,255,0.06); color:#a5a1c0;"
+            
+            btn_html = f"""
+            <a href="?nav=ideas&ideas_filter={tid}&ideas_cat_filter={ideas_cat_filter}" target="_self" style="text-decoration: none; width:100%;">
+                <div style="background: rgba(30, 24, 52, 0.4); border: 1px solid rgba(255, 255, 255, 0.05); padding: 8px 10px; border-radius: 8px; text-align: center; color: #a5a1c0; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; transition: all 0.2s; {active_btn_style}" onmouseover="this.style.background='rgba(45,35,75,0.6)';" onmouseout="this.style.background='{("rgba(90,200,220,0.15)" if ideas_filter == tid else "rgba(30, 24, 52, 0.4)")}';">
+                    <span>{lbl}</span>
+                    <span style="padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 900; {badge_style}">{cnt}</span>
+                </div>
+            </a>
+            """
+            cols_t[idx].markdown(btn_html, unsafe_allow_html=True)
+            
+    with c_filt_right:
+        cats_list = ["All Categories", "Experiment", "Content", "Thread", "Build", "General"]
+        sel_idx = cats_list.index(ideas_cat_filter) if ideas_cat_filter in cats_list else 0
+        cat_select = st.selectbox("Lọc danh mục", cats_list, index=sel_idx, label_visibility="collapsed", key="cat_select_ideas")
+        if cat_select != ideas_cat_filter:
+            st.query_params["ideas_cat_filter"] = cat_select
+            st.rerun()
+            
+    filtered_ideas = []
+    for idea in ideas_list:
+        matches_status = False
+        status_val = idea.get("status", "pending") or "pending"
+        if ideas_filter == "all":
+            matches_status = True
+        elif ideas_filter == "active":
+            matches_status = (status_val == "pending")
+        else:
+            matches_status = (status_val == ideas_filter)
+            
+        matches_cat = (ideas_cat_filter == "All Categories" or idea.get("category", "").lower() == ideas_cat_filter.lower())
+        
+        if matches_status and matches_cat:
+            filtered_ideas.append(idea)
+            
+    st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
+    
+    if not filtered_ideas:
+        st.markdown("""
+        <div style="text-align: center; padding: 60px; border: 1px dashed rgba(255,255,255,0.08); border-radius: 12px; color: #8a84a6; font-size: 14px;">
+            No ideas found under this section.
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        cols_grid = st.columns(3)
+        for i, idea in enumerate(filtered_ideas):
+            col_idx = i % 3
+            with cols_grid[col_idx]:
+                status_val = idea.get("status", "pending") or "pending"
+                is_pending = (status_val == "pending")
+                
+                tags_html = ""
+                if is_pending:
+                    tags_html += """
+                    <span style="font-size: 9px; font-weight: 900; text-transform: uppercase; color: #38bdf8; background: rgba(56,189,248,0.1); border: 1px solid rgba(56,189,248,0.2); padding: 2px 8px; border-radius: 20px; display: inline-flex; align-items: center; gap: 4px;">
+                        <span style="width:4px; height:4px; border-radius:50%; background:#38bdf8; display:inline-block; animation: pulse-dot 1s infinite;"></span> New
+                    </span>
+                    """
+                tags_html += f"""
+                <span style="font-size: 9px; font-weight: 900; text-transform: uppercase; color: #a5a1c0; background: rgba(255,255,255,0.06); padding: 2px 8px; border-radius: 20px;">
+                    🏷️ {escape(idea.get("category", "General"))}
+                </span>
+                """
+                
+                card_html = f"""
+                <div style="background: rgba(30, 24, 52, 0.45); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 18px; display: flex; flex-direction: column; justify-content: space-between; min-height: 190px; margin-bottom: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); transition: all 0.3s;" onmouseover="this.style.borderColor='rgba(16, 185, 129, 0.2)';" onmouseout="this.style.borderColor='rgba(255,255,255,0.06)';">
+                    <div>
+                        <div style="display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap;">
+                            {tags_html}
+                        </div>
+                        <h3 style="font-size: 14.5px; font-weight: 700; color: #ffffff; margin: 0 0 8px 0; line-height: 1.4;">
+                            {escape(idea.get("title"))}
+                        </h3>
+                        <p style="font-size: 12.5px; color: #a5a1c0; line-height: 1.4; font-weight: 400; margin: 0 0 15px 0;">
+                            {escape(idea.get("description") or "")}
+                        </p>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 10px; margin-top: auto;">
+                        <span style="font-size: 9.5px; font-weight: 700; color: #8a84a6; text-transform: uppercase; letter-spacing: 0.5px;">By: {escape(idea.get("source") or "user")}</span>
+                """
+                
+                if not is_pending:
+                    badge_color = "#10b981" if status_val == "approved" else "#ef4444"
+                    badge_bg = "rgba(16,185,129,0.1)" if status_val == "approved" else "rgba(239,68,68,0.1)"
+                    card_html += f"""
+                        <span style="font-size: 9px; font-weight: 900; text-transform: uppercase; color: {badge_color}; background: {badge_bg}; border: 1px solid {badge_color}30; padding: 2px 8px; border-radius: 4px;">{status_val}</span>
+                    """
+                
+                card_html += "</div></div>"
+                st.html(card_html)
+                
+                if is_pending:
+                    c_act_l, c_act_r = st.columns(2)
+                    if c_act_l.button("✓ Approve", key=f"appr_{idea['id']}", use_container_width=True):
+                        update_idea_status_db(idea["id"], "approved")
+                        st.rerun()
+                    if c_act_r.button("✗ Reject", key=f"rej_{idea['id']}", use_container_width=True):
+                        update_idea_status_db(idea["id"], "rejected")
+                        st.rerun()
+                        
+    st.stop()
+
+# ------------------------------------------------------------------------------
+# VIEW: YOUTUBE STUDIO (Roman Numeral XIX)
+# ------------------------------------------------------------------------------
+if active == "youtube":
+    import time
+    
+    if "yt_toast" in st.session_state and st.session_state.yt_toast:
+        st.toast(st.session_state.yt_toast, icon="✅")
+        st.session_state.yt_toast = None
+        
+    yt_tab = st.query_params.get("yt_tab", "long_form")
+    
+    st.markdown("""
+    <style>
+    .yt-tab-bar {
+        display: flex;
+        gap: 5px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        padding-bottom: 5px;
+        margin-bottom: 25px;
+        overflow-x: auto;
+    }
+    .yt-tab-item {
+        padding: 8px 16px;
+        font-size: 13px;
+        font-weight: 700;
+        color: #a5a1c0;
+        border-bottom: 2px solid transparent;
+        cursor: pointer;
+        transition: all 0.2s;
+        text-decoration: none;
+    }
+    .yt-tab-item:hover {
+        color: #ffffff;
+    }
+    .yt-tab-item.active {
+        color: #10b981;
+        border-color: #10b981;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    tabs_main = [
+        ("long_form", "Long Form"),
+        ("shorts", "Shorts"),
+        ("performance", "Performance"),
+        ("outliers", "Outliers"),
+        ("content_gap", "Content Gap")
+    ]
+    
+    tabs_html = "".join([
+        f'<a href="?nav=youtube&yt_tab={tid}" target="_self" class="yt-tab-item {"active" if yt_tab == tid else ""}">{lbl}</a>'
+        for tid, lbl in tabs_main
+    ])
+    st.markdown(f'<div class="yt-tab-bar">{tabs_html}</div>', unsafe_allow_html=True)
+    
+    if yt_tab != "long_form":
+        st.markdown(f"""
+        <div style="padding: 80px 20px; text-align: center; border: 1px dashed rgba(255, 255, 255, 0.08); border-radius: 16px; color: #8a84a6; font-size: 14px;">
+            This dashboard section is managed by Nova. Review the Long Form tab to assign scripting goals.
+        </div>
+        """, unsafe_allow_html=True)
+        st.stop()
+        
+    col_h_left, col_h_right = st.columns([2, 1])
+    with col_h_left:
+        st.markdown("""
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="width: 40px; height: 40px; border-radius: 10px; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); display: flex; align-items: center; justify-content: center;">
+                <span style="font-size: 20px; color: #ef4444;">📺</span>
+            </div>
+            <div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <h1 style="font-family: 'Outfit', sans-serif; font-size: 24px; font-weight: 700; color: #ffffff; margin: 0; line-height: 1.0;">Long Form</h1>
+                    <span style="font-size: 9px; font-weight: 900; text-transform: uppercase; color: #ef4444; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); padding: 2px 8px; border-radius: 20px;">YouTube</span>
+                    <span style="font-size: 9px; font-weight: 900; text-transform: uppercase; color: #3b82f6; background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); padding: 2px 8px; border-radius: 20px;">Twitter</span>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    scripts_list = load_youtube_scripts()
+    
+    yt_filter_type = st.query_params.get("yt_type", "all")
+    yt_cat_tab = st.query_params.get("yt_cat", "ideas")
+    
+    st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
+    c_sub_l, c_sub_r = st.columns([1.5, 2.5])
+    
+    with c_sub_l:
+        st.markdown("<div style='font-size: 11px; font-weight: 700; color: #5b5478; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;'>Filter</div>", unsafe_allow_html=True)
+        cols_type = st.columns(3)
+        types_lbl = ["All", "Articles", "Videos"]
+        types_ids = ["all", "articles", "videos"]
+        for idx, (lbl, tid) in enumerate(zip(types_lbl, types_ids)):
+            active_btn_style = "background: rgba(255, 255, 255, 0.05) !important; color:#ffffff !important; border-color: rgba(255,255,255,0.15);" if yt_filter_type == tid else ""
+            btn_html = f"""
+            <a href="?nav=youtube&yt_tab=long_form&yt_type={tid}&yt_cat={yt_cat_tab}" target="_self" style="text-decoration: none; width:100%;">
+                <div style="background: rgba(30, 24, 52, 0.4); border: 1px solid rgba(255, 255, 255, 0.05); padding: 6px; border-radius: 6px; text-align: center; color: #a5a1c0; font-size: 11px; font-weight: 700; cursor: pointer; transition: all 0.2s; {active_btn_style}" onmouseover="this.style.background='rgba(45,35,75,0.6)';" onmouseout="this.style.background='{("rgba(255, 255, 255, 0.05)" if yt_filter_type == tid else "rgba(30, 24, 52, 0.4)")}';">
+                    {lbl}
+                </div>
+            </a>
+            """
+            cols_type[idx].markdown(btn_html, unsafe_allow_html=True)
+            
+    with c_sub_r:
+        cols_cat = st.columns(5)
+        cats_lbl = ["Ideas", "Scripts", "To Film", "Filmed", "Posted"]
+        cats_ids = ["ideas", "scripts", "to_film", "filmed", "posted"]
+        for idx, (lbl, cid) in enumerate(zip(cats_lbl, cats_ids)):
+            cnt = sum(1 for s in scripts_list if s.get("category") == cid)
+            active_btn_style = "background: rgba(30, 24, 52, 0.6) !important; border-color: rgba(16, 185, 129, 0.3) !important; color:#ffffff !important;" if yt_cat_tab == cid else ""
+            badge_style = "background: rgba(16, 185, 129, 0.2); color:#10b981;" if yt_cat_tab == cid else "background: rgba(255,255,255,0.06); color:#a5a1c0;"
+            
+            btn_html = f"""
+            <a href="?nav=youtube&yt_tab=long_form&yt_type={yt_filter_type}&yt_cat={cid}" target="_self" style="text-decoration: none; width:100%;">
+                <div style="background: rgba(30, 24, 52, 0.3); border: 1px solid rgba(255, 255, 255, 0.05); padding: 8px 6px; border-radius: 8px; text-align: center; color: #a5a1c0; font-size: 11.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 4px; cursor: pointer; transition: all 0.2s; {active_btn_style}" onmouseover="this.style.background='rgba(45,35,75,0.6)';" onmouseout="this.style.background='{("rgba(30, 24, 52, 0.6)" if yt_cat_tab == cid else "rgba(30, 24, 52, 0.3)")}';">
+                    <span>{lbl}</span>
+                    <span style="padding: 1px 5px; border-radius: 4px; font-size: 9.5px; font-weight: 900; {badge_style}">{cnt}</span>
+                </div>
+            </a>
+            """
+            cols_cat[idx].markdown(btn_html, unsafe_allow_html=True)
+            
+    st.markdown("<div style='height:25px;'></div>", unsafe_allow_html=True)
+    st.markdown("""
+    <div style="background: rgba(30, 24, 52, 0.3); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 12px; padding: 18px; box-shadow: inset 0 0 10px rgba(0,0,0,0.3);">
+        <h4 style="margin: 0 0 10px 0; font-family: 'Outfit', sans-serif; font-size: 13px; font-weight: 600; color: #ffffff; display: flex; align-items: center; gap: 6px;">
+            <span style="color:#10b981; font-size:12px; animation: pulse-dot 1.5s infinite;">✦</span> Ask Nova to generate a new script outline
+        </h4>
+    """, unsafe_allow_html=True)
+    
+    with st.form("nova_prompt_form", clear_on_submit=True):
+        prompt_txt = st.text_area("Yêu cầu Nova phác thảo kịch bản", placeholder="vd. Làm thế nào để setup 7 AI agent chạy tự động với chi phí cực thấp...", height=80, label_visibility="collapsed")
+        c_frm_l, c_frm_r = st.columns([3, 1])
+        c_frm_l.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
+        submitted = c_frm_r.form_submit_button("Ask Nova to Outline", use_container_width=True)
+        if submitted and prompt_txt.strip():
+            with st.spinner("Nova đang phác thảo kịch bản..."):
+                generated_text = generate_nova_script(prompt_txt.strip())
+            new_scr = {
+                "id": f"script-{int(time.time())}",
+                "title": prompt_txt.strip(),
+                "hook": False,
+                "outline": False,
+                "fullScript": False,
+                "status": "pending_review",
+                "category": "ideas",
+                "type": "videos",
+                "notes": "",
+                "script_text": generated_text
+            }
+            scripts_list.insert(0, new_scr)
+            save_youtube_scripts(scripts_list)
+            st.session_state.yt_toast = "Tạo script outline mới thành công!"
+            st.rerun()
+            
+    st.markdown("</div>", unsafe_allow_html=True)
+    
+    filtered_scripts = []
+    for s in scripts_list:
+        matches_cat = (s.get("category") == yt_cat_tab)
+        matches_type = (yt_filter_type == "all" or s.get("type") == yt_filter_type)
+        
+        if matches_cat and matches_type:
+            filtered_scripts.append(s)
+            
+    st.markdown("<div style='height:25px;'></div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='font-size:11px; font-weight:700; color:#5b5478; text-transform:uppercase; letter-spacing:1.5px; margin-bottom:15px;'>Pending review ({len(filtered_scripts)})</div>", unsafe_allow_html=True)
+    
+    if not filtered_scripts:
+        st.markdown(f"""
+        <div style="text-align: center; padding: 60px; border: 1px dashed rgba(255,255,255,0.08); border-radius: 12px; color: #8a84a6; font-size: 14px;">
+            No scripts pending in this category.
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        for s in filtered_scripts:
+            tweak_key = f"tweak_mode_{s['id']}"
+            if tweak_key not in st.session_state:
+                st.session_state[tweak_key] = False
+                
+            st.markdown(f"""
+            <div style="background: rgba(30, 24, 52, 0.45); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 15px; margin-bottom: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.25);">
+                <div style="display: flex; justify-content: space-between; align-items: start;">
+                    <h3 style="font-size: 15.5px; font-weight: 700; color: #ffffff; margin: 0; line-height: 1.4; max-width: 85%;">
+                        {escape(s['title'])}
+                    </h3>
+                    <span style="font-size: 9px; font-weight: 900; text-transform: uppercase; color: #a5a1c0; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); padding: 2px 8px; border-radius: 4px;">{escape(s['type'])}</span>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            st.markdown("<div style='font-size:10px; font-weight:700; color:#5b5478; text-transform:uppercase; letter-spacing:0.5px;'>Checklist validation</div>", unsafe_allow_html=True)
+            c_chk_1, c_chk_2, c_chk_3 = st.columns(3)
+            
+            chk_hook = c_chk_1.checkbox("HOOK", value=s.get("hook", False), key=f"hook_{s['id']}")
+            chk_out = c_chk_2.checkbox("OUTLINE", value=s.get("outline", False), key=f"out_{s['id']}")
+            chk_full = c_chk_3.checkbox("FULL SCRIPT", value=s.get("fullScript", False), key=f"full_{s['id']}")
+            
+            if (chk_hook != s.get("hook") or chk_out != s.get("outline") or chk_full != s.get("fullScript")):
+                s["hook"] = chk_hook
+                s["outline"] = chk_out
+                s["fullScript"] = chk_full
+                
+                if chk_hook and chk_out and chk_full:
+                    s["category"] = "scripts"
+                    st.session_state.yt_toast = "Outline approved! Moving to scripts layout."
+                else:
+                    st.session_state.yt_toast = "Cập nhật checklist kịch bản!"
+                save_youtube_scripts(scripts_list)
+                st.rerun()
+                
+            if st.session_state[tweak_key]:
+                with st.form(f"tweak_form_{s['id']}", clear_on_submit=False):
+                    tw_notes = st.text_input("Ghi chú chỉnh sửa kịch bản", value=s.get("notes", ""))
+                    c_tw_frm_l, c_tw_frm_r = st.columns([4, 1])
+                    c_tw_frm_l.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+                    if c_tw_frm_r.form_submit_button("Save Notes", use_container_width=True):
+                        s["notes"] = tw_notes.strip()
+                        save_youtube_scripts(scripts_list)
+                        st.session_state[tweak_key] = False
+                        st.session_state.yt_toast = "Lưu ghi chú thành công!"
+                        st.rerun()
+                    if st.button("Cancel", key=f"cancel_tw_{s['id']}", use_container_width=True):
+                        st.session_state[tweak_key] = False
+                        st.rerun()
+            else:
+                if s.get("notes"):
+                    st.markdown(f"""
+                    <div style="background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.12); padding: 10px 14px; border-radius: 8px; font-size: 12.5px; color: #a5a1c0; font-style: italic;">
+                        Notes: {escape(s['notes'])}
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+            st.markdown("<div style='border-top:1px solid rgba(255,255,255,0.05); padding-top:12px; margin-top:5px;'></div>", unsafe_allow_html=True)
+            c_act_l, c_act_r = st.columns([2.5, 1.5])
+            
+            with c_act_l:
+                st.markdown("""
+                <style>
+                .yt-btn {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    background: transparent;
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    padding: 6px 12px;
+                    border-radius: 6px;
+                    color: #a5a1c0;
+                    font-size: 11px;
+                    font-weight: 700;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                }
+                .yt-btn:hover {
+                    background: rgba(255,255,255,0.05);
+                    color: #ffffff;
+                }
+                .yt-btn-primary {
+                    background: rgba(16, 185, 129, 0.05);
+                    border-color: rgba(16, 185, 129, 0.25);
+                    color: #10b981;
+                }
+                .yt-btn-primary:hover {
+                    background: rgba(16, 185, 129, 0.12);
+                    color: #34d399;
+                }
+                </style>
+                """, unsafe_allow_html=True)
+                
+                if st.button(f"📋 Copy Full Script", key=f"copy_{s['id']}"):
+                    script_content = s.get("script_text")
+                    if not script_content:
+                        script_content = f"""TITLE: {s['title']}
+--------------------------------------------------
+[HOOK]
+(0:00 - 0:30)
+"Most creators fail not because they lack ideas, but because they lack an automated system. In this video, I will show you how we coordinate our OpenClaw stack to do all the heavy lifting for under $30 a month..."
+
+[OUTLINE]
+1. Introduction to OpenClaw core architecture.
+2. Setting up the database on Supabase using port 5432.
+3. Seeding Max, Sage, Knox, and Nova on our Agent Floor.
+4. Integrating the heartbeats API endpoint.
+5. Running the entire setup locally with low budget.
+
+[FULL SCRIPT BODY]
+(Read the full script text draft here... complete tutorial details included)"""
+                    st.code(script_content, language="text")
+                    st.toast("Sao chép Script thành công!", icon="📋")
+                    
+                st.markdown("<span style='margin-right:8px;'></span>", unsafe_allow_html=True)
+                if st.button(f"✓ Approve & Generate Script", key=f"appr_gen_{s['id']}"):
+                    s["hook"] = True
+                    s["outline"] = True
+                    s["fullScript"] = True
+                    s["category"] = "scripts"
+                    if not s.get("script_text"):
+                        with st.spinner("Nova đang phác thảo kịch bản..."):
+                            s["script_text"] = generate_nova_script(s["title"])
+                    save_youtube_scripts(scripts_list)
+                    st.session_state.yt_toast = "Outline approved! Moving to scripts layout."
+                    st.rerun()
+                    
+            with c_act_r:
+                c_btn_l, c_btn_r = st.columns(2)
+                if c_btn_l.button("✎ Tweak", key=f"tweak_btn_{s['id']}", use_container_width=True):
+                    st.session_state[tweak_key] = True
+                    st.rerun()
+                if c_btn_r.button("🗑 Reject", key=f"reject_btn_{s['id']}", use_container_width=True):
+                    scripts_list = [scr for scr in scripts_list if scr["id"] != s["id"]]
+                    save_youtube_scripts(scripts_list)
+                    st.session_state.yt_toast = "Đã loại bỏ kịch bản!"
+                    st.rerun()
+                    
+            st.markdown("</div>", unsafe_allow_html=True)
+            
+    st.stop()
+
+# ------------------------------------------------------------------------------
 # VIEW: ALL OTHER SELF SECTIONS (fallback cho SELF section chưa có view riêng)
 # ------------------------------------------------------------------------------
-if active in SELF_SECTIONS and active != "memory":
+if active in SELF_SECTIONS and active not in ["memory", "agenthq", "ideas", "youtube"]:
     s = SELF_SECTIONS[active]
     render_custom_header(s["num"], "SELF", s["label"], s["desc"])
     

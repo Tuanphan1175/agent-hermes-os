@@ -9,6 +9,8 @@ DROP TABLE IF EXISTS ai_spend;
 DROP TABLE IF EXISTS mission_control;
 DROP TABLE IF EXISTS notebook;
 DROP TABLE IF EXISTS journal;
+DROP TABLE IF EXISTS ideas;
+DROP TABLE IF EXISTS datastore;
 
 CREATE TABLE obsidian_vault (
     id SERIAL PRIMARY KEY,
@@ -51,6 +53,21 @@ CREATE TABLE journal (
     updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc', NOW())
 );
 
+CREATE TABLE ideas (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    category TEXT NOT NULL,
+    source TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    timestamp TIMESTAMPTZ DEFAULT TIMEZONE('utc', NOW())
+);
+
+CREATE TABLE datastore (
+    key TEXT PRIMARY KEY,
+    data JSONB NOT NULL DEFAULT '[]'::jsonb
+);
+
 -- 2) SEED obsidian_vault ---------------------------------------------
 INSERT INTO obsidian_vault (file_name, file_path, category, updated_at) VALUES
 ('2026-05-18', 'Agentic OS/Memories/2026-05-18.md', 'Recent', '15m ago'),
@@ -76,12 +93,47 @@ INSERT INTO mission_control (goal_name, status, turn_budget, turns_used, progres
 ('Backup bộ não Hermes lên Git',       'Done',        10,  9, 100),
 ('Tích hợp n8n đo chi phí token',      'In Progress', 25, 12, 45);
 
+-- 3c) seed ideas ------------------------------------------------------
+INSERT INTO ideas (id, title, description, category, source, status) VALUES
+('idea-1', 'Auto-sync Obsidian with Telegram Agent', 'Trigger an alert on Telegram whenever a new note is added to the vault.', 'Experiment', 'sage', 'pending'),
+('idea-2', 'Build a custom n8n dashboard for token cost tracking', 'Render a bar chart of everyday model expenses with direct API calls.', 'Build', 'max', 'approved'),
+('idea-3', 'Create a 5-minute video tutorial explaining OpenClaw setup', 'High-retention script outline demonstrating local swarm coordination.', 'Content', 'nova', 'pending');
+
+-- 3d) seed datastore --------------------------------------------------
+INSERT INTO datastore (key, data) VALUES
+('youtube-scripts', '[
+  {
+    "id": "script-1",
+    "title": "How To Build a Public Scoreboard for 7 AI Agents in OpenClaw",
+    "hook": false,
+    "outline": true,
+    "fullScript": false,
+    "status": "pending_review",
+    "category": "ideas",
+    "type": "articles",
+    "notes": ""
+  },
+  {
+    "id": "script-2",
+    "title": "How To Run OpenClaw With Claude and Gemma 4 for $30/Month",
+    "hook": true,
+    "outline": true,
+    "fullScript": true,
+    "status": "pending_review",
+    "category": "ideas",
+    "type": "videos",
+    "notes": ""
+  }
+]'::jsonb);
+
 -- 4) RLS --------------------------------------------------------------
 ALTER TABLE obsidian_vault  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_spend        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE mission_control ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notebook        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE journal         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ideas           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE datastore       ENABLE ROW LEVEL SECURITY;
 
 REVOKE INSERT, UPDATE, DELETE ON obsidian_vault  FROM anon;
 REVOKE INSERT, UPDATE, DELETE ON ai_spend        FROM anon;
@@ -90,6 +142,8 @@ GRANT  SELECT                  ON notebook        TO   anon;
 REVOKE INSERT, UPDATE, DELETE ON notebook        FROM anon;
 GRANT  SELECT                  ON journal         TO   anon;
 REVOKE INSERT, UPDATE, DELETE ON journal         FROM anon;
+GRANT  SELECT, INSERT, UPDATE, DELETE ON ideas    TO   anon;
+GRANT  SELECT, INSERT, UPDATE, DELETE ON datastore TO   anon;
 
 DROP POLICY IF EXISTS "vault_read_anon" ON obsidian_vault;
 CREATE POLICY "vault_read_anon" ON obsidian_vault
@@ -106,6 +160,14 @@ CREATE POLICY "notebook_read_anon" ON notebook
 DROP POLICY IF EXISTS "journal_read_anon" ON journal;
 CREATE POLICY "journal_read_anon" ON journal
     FOR SELECT TO anon USING (true);
+
+DROP POLICY IF EXISTS "ideas_all_anon" ON ideas;
+CREATE POLICY "ideas_all_anon" ON ideas
+    FOR ALL TO anon USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "datastore_all_anon" ON datastore;
+CREATE POLICY "datastore_all_anon" ON datastore
+    FOR ALL TO anon USING (true) WITH CHECK (true);
 
 -- ai_spend: cố ý KHÔNG có policy cho anon -> anon bị chặn đọc/ghi.
 -- Dashboard đọc ai_spend bằng service_role (bỏ qua RLS).

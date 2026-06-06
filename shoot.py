@@ -2,8 +2,11 @@ from playwright.sync_api import sync_playwright
 
 BASE = "http://localhost:8530"
 shots = [
-    ("memory",   f"{BASE}/?nav=memory",   "shot_memory.png",   "Obsidian Vault"),
-    ("openclaw", f"{BASE}/?nav=openclaw", "shot_openclaw.png", "OpenClaw"),
+    ("agenthq",     f"{BASE}/?nav=agenthq",     "shot_agenthq.png",     "Agent HQ"),
+    ("ideas",       f"{BASE}/?nav=ideas",       "shot_ideas.png",       "Ideas Board"),
+    ("youtube",     f"{BASE}/?nav=youtube",     "shot_youtube.png",     "YouTube Studio"),
+    ("memory",      f"{BASE}/?nav=memory",      "shot_memory.png",      "Obsidian Vault"),
+    ("openclaw",    f"{BASE}/?nav=openclaw",    "shot_openclaw.png",    "OpenClaw"),
     ("claude",      f"{BASE}/?nav=claude",      "shot_claude.png",      "Anthropic Flagship"),
     ("gemini",      f"{BASE}/?nav=gemini",      "shot_gemini.png",      "Google DeepMind"),
     ("antigravity", f"{BASE}/?nav=antigravity", "shot_antigravity.png", "Agentic IDE"),

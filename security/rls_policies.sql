@@ -44,3 +44,45 @@ CREATE POLICY "mission_read_anon"
   FOR SELECT
   TO anon
   USING (true);
+
+-- ---------------------------------------------------------------------
+-- notebook: dashboard đọc danh sách ghi chú nháp.
+-- ---------------------------------------------------------------------
+ALTER TABLE notebook ENABLE ROW LEVEL SECURITY;
+GRANT SELECT ON notebook TO anon;
+REVOKE INSERT, UPDATE, DELETE ON notebook FROM anon;
+
+DROP POLICY IF EXISTS "notebook_read_anon" ON notebook;
+CREATE POLICY "notebook_read_anon" ON notebook
+  FOR SELECT TO anon USING (true);
+
+-- ---------------------------------------------------------------------
+-- journal: dashboard đọc nhật ký.
+-- ---------------------------------------------------------------------
+ALTER TABLE journal ENABLE ROW LEVEL SECURITY;
+GRANT SELECT ON journal TO anon;
+REVOKE INSERT, UPDATE, DELETE ON journal FROM anon;
+
+DROP POLICY IF EXISTS "journal_read_anon" ON journal;
+CREATE POLICY "journal_read_anon" ON journal
+  FOR SELECT TO anon USING (true);
+
+-- ---------------------------------------------------------------------
+-- ideas: cộng tác ý tưởng.
+-- ---------------------------------------------------------------------
+ALTER TABLE ideas ENABLE ROW LEVEL SECURITY;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ideas TO anon;
+
+DROP POLICY IF EXISTS "ideas_all_anon" ON ideas;
+CREATE POLICY "ideas_all_anon" ON ideas
+  FOR ALL TO anon USING (true) WITH CHECK (true);
+
+-- ---------------------------------------------------------------------
+-- datastore: cấu trúc lưu trữ chung (ví dụ youtube-scripts).
+-- ---------------------------------------------------------------------
+ALTER TABLE datastore ENABLE ROW LEVEL SECURITY;
+GRANT SELECT, INSERT, UPDATE, DELETE ON datastore TO anon;
+
+DROP POLICY IF EXISTS "datastore_all_anon" ON datastore;
+CREATE POLICY "datastore_all_anon" ON datastore
+  FOR ALL TO anon USING (true) WITH CHECK (true);

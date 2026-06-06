@@ -1076,6 +1076,9 @@ def render_custom_header(num: str, section_type: str, section_name: str, desc: s
                 <a href="#" class="nav-link" style="display: flex; align-items: center; gap: 6px; font-family: 'Outfit', sans-serif; font-size: 13px; color: #a5a1c0 !important; background: rgba(30,24,52,0.5); border: 1px solid rgba(255,255,255,0.05); padding: 6px 14px; border-radius: 8px; text-decoration: none; transition: all 0.2s;">
                     <span style="font-size: 11px; background:rgba(255,255,255,0.08); padding:1px 5px; border-radius:4px; margin-right:2px;">⌘K</span> Command palette
                 </a>
+                <a href="?nav=mission" target="_self" class="nav-link" style="display: flex; align-items: center; gap: 6px; font-family: 'Outfit', sans-serif; font-size: 13px; color: #a5a1c0 !important; background: rgba(30,24,52,0.5); border: 1px solid rgba(255,255,255,0.05); padding: 6px 14px; border-radius: 8px; text-decoration: none; transition: all 0.2s; letter-spacing: 0.5px;">
+                    <span style="color:#5ad7e6; font-size:13px;">▦</span> ALL SYSTEMS
+                </a>
             </div>
         </div>
     </div>
@@ -1239,11 +1242,17 @@ if active in AGENTS:
     if active == "hermes":
         tab = st.query_params.get("tab", "chat")
         
-        # HTML styled horizontal sub-tab bar
+        # HTML styled horizontal sub-tab bar (order khớp ảnh mẫu)
         tabs = [
             {"id": "chat", "label": "Chat", "icon": "💬"},
+            {"id": "talk", "label": "Talk", "icon": "🎙️"},
+            {"id": "jarvis", "label": "Jarvis", "icon": "🛰️"},
+            {"id": "studio", "label": "Studio", "icon": "🎬"},
+            {"id": "sessions", "label": "Sessions", "icon": "🗂️"},
             {"id": "goal", "label": "Goal Mode", "icon": "🎯"},
             {"id": "workspace", "label": "Workspace", "icon": "📁"},
+            {"id": "mcps", "label": "MCPs", "icon": "🔌"},
+            {"id": "manage", "label": "Manage", "icon": "🛠️"},
             {"id": "control", "label": "Control Room", "icon": "🎛️"},
         ]
         tabs_html = "".join([
@@ -1253,7 +1262,29 @@ if active in AGENTS:
             for t in tabs
         ])
         st.markdown(f'<div style="display:flex; gap:5px; margin-bottom:20px; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:10px; flex-wrap:wrap;">{tabs_html}</div>', unsafe_allow_html=True)
-        
+
+        # Hermes Agent dashboard (web UI cục bộ) — nguồn quản trị thật cho Manage/Sessions/MCPs...
+        dash_url = st.secrets.get("HERMES_DASHBOARD_URL", "http://localhost:9119")
+
+        def _dash_reachable(u):
+            # Ping ngắn để hiện trạng thái; tránh block render tab Manage.
+            try:
+                httpx.get(u, timeout=1.5)
+                return True
+            except Exception:
+                return False
+
+        def _hermes_feature_panel(icon, title, desc, cta_label, cta_url, new_tab=True):
+            target = "_blank" if new_tab else "_self"
+            st.markdown(f"""
+            <div style="background: rgba(30,24,52,0.45); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border:1px solid rgba(255,255,255,0.06); border-radius:14px; padding:36px 28px; text-align:center; margin-top:10px; box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+                <div style="font-size:46px; margin-bottom:14px; filter:drop-shadow(0 0 12px rgba(90,215,230,0.35)); line-height:1;">{icon}</div>
+                <h3 style="color:#fff; margin:0 0 10px 0; font-family:'Outfit',sans-serif; font-size:21px; font-weight:500; letter-spacing:-0.5px;">{escape(title)}</h3>
+                <p style="color:#a5a1c0; font-size:14px; max-width:560px; margin:0 auto 22px auto; line-height:1.6; font-weight:300;">{escape(desc)}</p>
+                <a href="{escape(cta_url)}" target="{target}" style="display:inline-flex; align-items:center; gap:8px; background:linear-gradient(135deg,#5ad7e6,#785ae6); color:#fff !important; font-weight:600; font-size:14px; padding:11px 26px; border-radius:8px; text-decoration:none; box-shadow:0 0 18px rgba(90,215,230,0.3); border:1px solid rgba(255,255,255,0.1);">{escape(cta_label)} ↗</a>
+            </div>
+            """, unsafe_allow_html=True)
+
         if tab == "chat":
             st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
             url = st.secrets.get("HERMES_API_URL")
@@ -1614,7 +1645,9 @@ if active in AGENTS:
                 """, unsafe_allow_html=True)
                 
                 if "landing" in current_file or "index" in current_file or "testimonials" in current_file:
-                    st.markdown("""
+                    # st.html() render HTML thô, không qua markdown -> tránh bug HTML thụt lề
+                    # + dòng trống bị biến thành code block (LIVE PREVIEW hiện code thay vì trang).
+                    st.html("""
                     <div style="background: linear-gradient(160deg, #151125 0%, #0c0817 100%); border: 1px solid rgba(255,255,255,0.06); border-radius: 0 0 12px 12px; padding: 25px; min-height: 420px; color: #d8d4e6; font-family: 'Outfit', sans-serif;">
                         
                         <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 15px; border-radius: 12px; text-align: center; margin-bottom: 25px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
@@ -1649,7 +1682,7 @@ if active in AGENTS:
                             </p>
                         </div>
                     </div>
-                    """, unsafe_allow_html=True)
+                    """)
                 elif "py" in current_file:
                     st.code(f"""# {current_file} - Local Sync Core Engine
 import os
@@ -1670,9 +1703,63 @@ if __name__ == "__main__":
                 else:
                     st.markdown("<div style='background:rgba(25,20,40,0.4); border:1px solid rgba(255,255,255,0.06); border-radius:0 0 12px 12px; padding:40px; text-align:center; min-height:420px; display:flex; flex-direction:column; justify-content:center; align-items:center;'><span style='font-size:52px; margin-bottom:15px;'>📄</span><h5 style='color:#ffffff; margin:0; font-size:16px;'>Raw Text / Data Payload</h5><p style='color:#8b92b6; font-size:12px; margin-top:5px;'>Decrypted buffer content successfully parsed.</p></div>", unsafe_allow_html=True)
                     
+        elif tab == "manage":
+            st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
+            host = dash_url.split("://")[-1].rstrip("/")
+            reachable = _dash_reachable(dash_url)
+            dot = "#34d399" if reachable else "#fbbf24"
+            state_txt = "Connected" if reachable else "Configured"
+
+            c_status, c_refresh, c_open = st.columns([4, 1, 1])
+            with c_status:
+                st.markdown(f"""
+                <div style="display:flex; align-items:center; gap:10px; background: rgba(30,24,52,0.6); border:1px solid rgba(255,255,255,0.06); border-radius:10px; padding:11px 16px;">
+                    <span style="width:9px; height:9px; border-radius:50%; background:{dot}; box-shadow:0 0 8px {dot};"></span>
+                    <span style="font-size:13px; color:#e7e5ef; font-weight:600;">Hermes Dashboard</span>
+                    <span style="font-size:12px; color:#8b92b6; font-family:'JetBrains Mono',monospace;">{state_txt} &middot; {escape(host)}</span>
+                </div>
+                """, unsafe_allow_html=True)
+            with c_refresh:
+                if st.button("↻ Refresh", use_container_width=True, key="hermes_dash_refresh"):
+                    st.rerun()
+            with c_open:
+                st.markdown(f"""
+                <a href="{escape(dash_url)}" target="_blank" style="display:inline-flex; justify-content:center; width:100%; align-items:center; gap:6px; background:rgba(90,215,230,0.1); border:1px solid rgba(90,215,230,0.25); color:#5ad7e6 !important; padding:8px 10px; border-radius:8px; font-size:13px; text-decoration:none; font-weight:600;">⧉ Open in tab</a>
+                """, unsafe_allow_html=True)
+
+            st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
+            if not reachable:
+                st.caption(f"Dashboard nhúng tải trực tiếp trong trình duyệt của bạn từ {host}. Nếu trang trống: dashboard chưa chạy, hoặc chặn nhúng (X-Frame-Options) — bấm **Open in tab**. Đổi địa chỉ qua secret `HERMES_DASHBOARD_URL`.")
+            st.components.v1.iframe(dash_url, height=720, scrolling=True)
+
+        elif tab == "sessions":
+            _hermes_feature_panel("🗂️", "Sessions",
+                "Lịch sử phiên làm việc của Hermes Agent — tiếp tục, tìm kiếm và nén ngữ cảnh. Quản lý trực tiếp trong Hermes Dashboard.",
+                "Mở Hermes Dashboard", "?nav=hermes&tab=manage", new_tab=False)
+
+        elif tab == "mcps":
+            _hermes_feature_panel("🔌", "MCP Servers",
+                "Các Model Context Protocol server cấp tools/resources cho Hermes. Bật/tắt và định tuyến tool trong Hermes Dashboard.",
+                "Mở Hermes Dashboard", "?nav=hermes&tab=manage", new_tab=False)
+
+        elif tab == "talk":
+            _hermes_feature_panel("🎙️", "Talk",
+                "Kênh hội thoại thời gian thực với Hermes (voice/relay). Cấu hình Channels & Webhooks trong Hermes Dashboard.",
+                "Mở Hermes Dashboard", "?nav=hermes&tab=manage", new_tab=False)
+
+        elif tab == "jarvis":
+            _hermes_feature_panel("🛰️", "Jarvis",
+                "Chế độ trợ lý chủ động — Hermes theo dõi tín hiệu và chạy automation theo lịch. Cấu hình Cron & Plugins trong Hermes Dashboard.",
+                "Mở Hermes Dashboard", "?nav=hermes&tab=manage", new_tab=False)
+
+        elif tab == "studio":
+            _hermes_feature_panel("🎬", "Studio",
+                "Không gian sản xuất media của Hermes: apps, video, images, audio — tất cả gom trong Workspace của agent.",
+                "Mở Workspace", "?nav=hermes&tab=workspace", new_tab=False)
+
         elif tab == "control":
             st.markdown("<div style='padding:20px; text-align:center;'><span style='font-size:36px;'>🎛️</span><h4>Control Room</h4><p style='color:#7d7796;'>Realtime logs, memory weights, and neural engine hyper-parameters.</p></div>", unsafe_allow_html=True)
-            
+
     elif active == "openclaw":
         tab_ctrl, tab_spend = st.tabs(["Control Center", "AI Spend"])
         

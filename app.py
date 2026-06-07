@@ -1151,38 +1151,47 @@ def deploy_campaign_to_netlify(campaign: dict) -> dict:
 # 6. LAYOUT RENDERING FUNCTIONS
 # ==============================================================================
 
-def back_button_html() -> str:
-    """HTML nút Back — chuỗi MỘT DÒNG (an toàn với Markdown), rỗng khi ở trang chủ.
-    Dùng anchor ?nav= thật (KHÔNG javascript:history.back vì Streamlit lọc scheme đó)."""
-    if st.query_params.get("nav", "agenthq") == "agenthq":
-        return ""
-    return (
-        '<a href="?nav=agenthq" target="_self" class="nav-link" '
-        'style="display:inline-flex; align-items:center; gap:6px; font-family:\'Outfit\',sans-serif; '
-        'font-size:12px; color:#a5a1c0 !important; background:rgba(30,24,52,0.5); '
-        'border:1px solid rgba(255,255,255,0.06); padding:5px 12px; border-radius:8px; '
-        'text-decoration:none; margin-bottom:12px; transition:all 0.2s;">'
-        '<span style="font-size:15px; line-height:1;">&larr;</span> Back</a>'
-    )
-
-
 def render_back_button() -> None:
-    """Render nút Back độc lập cho các view KHÔNG dùng render_custom_header."""
-    html = back_button_html()
-    if html:
-        st.markdown(html, unsafe_allow_html=True)
+    """Nút Back dùng LỊCH SỬ TRÌNH DUYỆT — chạy trên MỌI view (kể cả trang chủ),
+    quay về đúng trang trước đó. Streamlit lọc scheme javascript: nên phải dùng
+    1 component HTML gọi window.parent.history.back(). Tự ẩn khi không có lịch sử để lùi."""
+    st.components.v1.html(
+        """
+<style>
+  html,body{margin:0;background:transparent;overflow:hidden;}
+  #hb{display:inline-flex;align-items:center;gap:6px;font-family:'Outfit',sans-serif,system-ui;
+      font-size:12px;color:#a5a1c0;background:rgba(30,24,52,0.5);border:1px solid rgba(255,255,255,0.06);
+      padding:6px 14px;border-radius:8px;cursor:pointer;transition:all .2s;}
+  #hb:hover{color:#fff;border-color:rgba(90,215,230,0.35);background:rgba(45,35,75,0.6);}
+  #hb span{font-size:15px;line-height:1;}
+</style>
+<button id="hb"><span>&larr;</span> Back</button>
+<script>
+  (function(){
+    var btn=document.getElementById('hb'), h;
+    try{ h=window.parent.history; }catch(e){ h=window.history; }
+    try{ if(!h || h.length<=1){ btn.style.display='none'; } }catch(e){}
+    btn.onclick=function(){
+      try{ window.parent.history.back(); }
+      catch(e){ try{ window.top.history.back(); }catch(e2){ history.back(); } }
+    };
+  })();
+</script>
+        """,
+        height=40,
+    )
 
 
 def render_custom_header(num: str, section_type: str, section_name: str, desc: str) -> None:
     # Giờ Ho Chi Minh (UTC+7, không DST) tính lúc render.
     hcm_time = datetime.now(timezone(timedelta(hours=7))).strftime("%H:%M")
-    # Nút Back: hiện ở mọi view trừ trang chủ (agenthq) — quay về Agent HQ.
-    back_btn = back_button_html()
+    # Nút Back (lịch sử trình duyệt) — hiển thị trên mọi view.
+    render_back_button()
     st.markdown(f"""
     <div style="position: relative; margin-bottom: 2rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 1.2rem;">
         <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap:15px;">
             <div>
-                {back_btn}<div style="font-family: 'Cinzel', serif; font-size: 12px; color: #8b8ea9; letter-spacing: 4px; text-transform: uppercase;">
+                <div style="font-family: 'Cinzel', serif; font-size: 12px; color: #8b8ea9; letter-spacing: 4px; text-transform: uppercase;">
                     {num}. &mdash; {section_type} - {section_name}
                 </div>
                 <h1 style="font-family: 'Outfit', sans-serif; font-size: 38px; font-weight: 400; color: #ffffff; margin: 0.3rem 0 0.5rem 0; letter-spacing: -0.5px;">

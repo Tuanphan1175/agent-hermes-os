@@ -1100,8 +1100,7 @@ def render_custom_header(num: str, section_type: str, section_name: str, desc: s
     <div style="position: relative; margin-bottom: 2rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 1.2rem;">
         <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap:15px;">
             <div>
-                {back_btn}
-                <div style="font-family: 'Cinzel', serif; font-size: 12px; color: #8b8ea9; letter-spacing: 4px; text-transform: uppercase;">
+                {back_btn}<div style="font-family: 'Cinzel', serif; font-size: 12px; color: #8b8ea9; letter-spacing: 4px; text-transform: uppercase;">
                     {num}. &mdash; {section_type} - {section_name}
                 </div>
                 <h1 style="font-family: 'Outfit', sans-serif; font-size: 38px; font-weight: 400; color: #ffffff; margin: 0.3rem 0 0.5rem 0; letter-spacing: -0.5px;">

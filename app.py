@@ -269,8 +269,8 @@ AGENTS = {
         "color": "#ff7eb3"
     },
     "hermes": {
-        "label": "Hermes", "avatar": "✈", "cls": "av-hermes", 
-        "num": "IV", "desc": "Nous Research agent. Sessions, skills, kanban — and a chat line.",
+        "label": "Hermes", "avatar": "✈", "cls": "av-hermes",
+        "num": "IV", "desc": "Nous Research agent. Model routing: gpt-5.5 (code) · deepseek-4-flash (general) · minimax-m3 (content). Sessions, skills, kanban, chat.",
         "color": "#5aa9ff"
     },
     "gemini": {
@@ -337,10 +337,40 @@ SELF_SECTIONS = {
         "num": "XV", "desc": "Search 1,261 Omi memories + your Obsidian vault."
     },
     "guide": {
-        "label": "Build Guide", "icon": "✦", "match": "Build", 
+        "label": "Build Guide", "icon": "✦", "match": "Build",
         "num": "XVI", "desc": "Engineering manuals, OS setup procedures, and code templates for Agent OS deployment."
     }
 }
+
+# Cấu hình model thống nhất cho Hermes — NGUỒN SỰ THẬT DUY NHẤT.
+# Hiển thị giống nhau trên mọi giao diện (tab Hermes, Agent HQ drawer) để cấu
+# hình định tuyến model luôn nhất quán. Việc chuyển model thật do `hermes` CLI
+# trên VPS thực thi; dashboard chỉ phản ánh bảng định tuyến đã thống nhất.
+HERMES_MODELS = [
+    {"task": "Nhiệm vụ phức tạp (viết code)", "model": "gpt-5.5", "provider": "openai-codex"},
+    {"task": "Nhiệm vụ thông thường", "model": "deepseek-4-flash", "provider": "deepseek"},
+    {"task": "Viết content", "model": "minimax-m3", "provider": "minimax"},
+]
+
+
+def hermes_model_card_html() -> str:
+    """Thẻ glassmorphism hiển thị bảng định tuyến model của Hermes."""
+    rows = "".join(
+        '<div style="display:flex; justify-content:space-between; gap:12px; align-items:baseline; '
+        'padding:6px 0; border-top:1px solid rgba(255,255,255,0.05);">'
+        f'<span style="color:#a5a1c0; font-size:12px;">{escape(m["task"])}</span>'
+        f'<span style="color:#fff; font-size:12px; font-weight:600; text-align:right;">{escape(m["model"])}'
+        f'<span style="color:#5ad7e6; font-weight:500;"> · {escape(m["provider"])}</span></span>'
+        '</div>'
+        for m in HERMES_MODELS
+    )
+    return (
+        '<div style="background:rgba(30,24,52,0.45); backdrop-filter:blur(10px); '
+        'border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:12px 16px; margin-bottom:14px;">'
+        '<div style="font-size:10px; font-weight:700; color:#5ad7e6; letter-spacing:2px; '
+        'text-transform:uppercase; margin-bottom:2px;">⚡ Hermes · Model Routing</div>'
+        + rows + '</div>'
+    )
 
 # ==============================================================================
 # 4. MOCK DATA FALLBACKS (PIXEL PERFECT BACKUPS)
@@ -1292,7 +1322,10 @@ if active in AGENTS:
             
             # Sub-header
             st.markdown("<div style='font-size:16px; font-weight:600; color:#ffffff; margin-bottom:12px;'>✦ Live Chat Terminal</div>", unsafe_allow_html=True)
-            
+
+            # Bảng định tuyến model — hiển thị thống nhất với Agent HQ drawer
+            st.markdown(hermes_model_card_html(), unsafe_allow_html=True)
+
             if not url:
                 # Provide gorgeous preview messages inside chat if no API is available
                 if "hermes_msgs" not in st.session_state:
@@ -3134,7 +3167,7 @@ if active == "agenthq":
         "knox": {"name": "KNOX", "emoji": "🛡️", "role": "OPS DESK", "status": "working", "task": "DEX transactions checked. Liquidity stable.", "glow": "sky-500", "left": "41%", "top": "55%"},
         "nova": {"name": "NOVA", "emoji": "🚀", "role": "CREATIVE HUB", "status": "idle", "task": "Drafting outline for low budget setups.", "glow": "rose-500", "left": "70%", "top": "55%"},
         "pixel": {"name": "PIXEL", "emoji": "👾", "role": "DESIGN LAB", "status": "online", "task": "Exporting matching CSS design tokens.", "glow": "purple-500", "left": "12%", "top": "22%"},
-        "hermes": {"name": "HERMES", "emoji": "⚡", "role": "HERMES DESK", "status": "working", "task": "FastAPI shim active on Hostinger VPS.", "glow": "emerald-500", "left": "41%", "top": "22%"}
+        "hermes": {"name": "HERMES", "emoji": "⚡", "role": "HERMES DESK", "status": "working", "task": "Model routing: gpt-5.5 · deepseek-4-flash · minimax-m3.", "glow": "emerald-500", "left": "41%", "top": "22%"}
     }
     
     # Lấy chat_agent từ query params hoặc state
@@ -3412,7 +3445,11 @@ if active == "agenthq":
                 <a href="?nav=agenthq" target="_self" style="text-decoration: none; font-size: 16px; color: #8a84a6 !important; transition: all 0.2s;" onmouseover="this.style.color='#ffffff';" onmouseout="this.style.color='#8a84a6';">✕</a>
             </div>
             """)
-            
+
+            # Bảng định tuyến model — hiển thị thống nhất với tab Hermes (luôn hiện kể cả khi VPS lỗi)
+            if chat_agent == "hermes":
+                st.markdown(hermes_model_card_html(), unsafe_allow_html=True)
+
             # Lịch sử chat trong session_state
             if "chat_history" not in st.session_state:
                 st.session_state.chat_history = {}

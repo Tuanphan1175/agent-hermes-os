@@ -530,6 +530,75 @@ def update_idea_status_db(idea_id, status):
     except Exception:
         return False
 
+def minimax_tts(text: str) -> tuple[bytes | None, str | None]:
+    """MiniMax T2A v2 → mp3 bytes. Trả (audio, None) khi OK; (None, lỗi) khi lỗi.
+    Cấu hình qua secrets: MINIMAX_API_KEY, MINIMAX_GROUP_ID
+    (tùy chọn: MINIMAX_VOICE_ID, MINIMAX_TTS_MODEL, MINIMAX_API_BASE)."""
+    api_key = st.secrets.get("MINIMAX_API_KEY")
+    group_id = st.secrets.get("MINIMAX_GROUP_ID")
+    if not api_key or not group_id:
+        return None, "Chưa cấu hình MiniMax (thiếu MINIMAX_API_KEY / MINIMAX_GROUP_ID)."
+    text = (text or "").strip()
+    if not text:
+        return None, "Không có nội dung để đọc."
+
+    base = st.secrets.get("MINIMAX_API_BASE", "https://api.minimax.io").rstrip("/")
+    model = st.secrets.get("MINIMAX_TTS_MODEL", "speech-02-hd")
+    voice_id = st.secrets.get("MINIMAX_VOICE_ID", "English_expressive_narrator")
+    try:
+        r = httpx.post(
+            f"{base}/v1/t2a_v2?GroupId={group_id}",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={
+                "model": model,
+                "text": text[:9000],
+                "stream": False,
+                "language_boost": "auto",
+                "output_format": "hex",
+                "voice_setting": {"voice_id": voice_id, "speed": 1.0, "vol": 1.0, "pitch": 0},
+                "audio_setting": {"sample_rate": 32000, "bitrate": 128000, "format": "mp3", "channel": 1},
+            },
+            timeout=60,
+        )
+        r.raise_for_status()
+        data = r.json()
+        # MiniMax báo lỗi nghiệp vụ trong base_resp dù HTTP vẫn 200.
+        base_resp = data.get("base_resp") or {}
+        if base_resp.get("status_code") not in (0, None):
+            return None, f"MiniMax lỗi: {base_resp.get('status_msg', 'unknown')} (code {base_resp.get('status_code')})"
+        audio_hex = (data.get("data") or {}).get("audio")
+        if not audio_hex:
+            return None, "MiniMax không trả audio (kiểm tra voice_id/model/quota)."
+        return bytes.fromhex(audio_hex), None
+    except Exception as e:
+        return None, f"Không gọi được MiniMax TTS: {e}"
+
+
+def hermes_chat_reply(message: str) -> str:
+    """Gửi 1 tin nhắn tới Hermes shim, trả câu trả lời đã làm sạch (hoặc thông báo lỗi thân thiện)."""
+    url = st.secrets.get("HERMES_API_URL")
+    key = st.secrets.get("HERMES_API_KEY")
+    if not url:
+        return "Hermes chưa kết nối (thiếu HERMES_API_URL). Bạn vẫn có thể dùng công cụ đọc văn bản bên dưới."
+    try:
+        headers = {"Content-Type": "application/json"}
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
+        r = httpx.post(f"{url.rstrip('/')}/chat", json={"message": message}, headers=headers, timeout=180)
+        if r.status_code == 401:
+            return "⚠️ 401 Unauthorized — HERMES_API_KEY không khớp với shim trên VPS."
+        r.raise_for_status()
+        raw = r.json().get("reply", "")
+        cleaned = raw.split("\n")
+        cleaned = [l for l in cleaned if not (("Hermes" in l) and ("─" in l or "═" in l))]
+        cleaned = [l.replace("│", "").strip() for l in cleaned]
+        cleaned = [l for l in cleaned if not all(c in "─╭╰╯╮┬┴┼═║╔╗╚╝░▒▓█▄▀■-—_=+*#" for c in l.strip())]
+        out = "\n".join(l for l in cleaned if l.strip()).strip()
+        return out or raw.strip() or "(Hermes không trả về nội dung)"
+    except Exception as e:
+        return f"⚠️ Hermes lỗi kết nối: {e}. Bạn vẫn có thể dùng công cụ đọc văn bản bên dưới."
+
+
 def generate_nova_script(title: str) -> str:
     vps_url = st.secrets.get("HERMES_API_URL")
     vps_key = st.secrets.get("HERMES_API_KEY")
@@ -1828,9 +1897,63 @@ if __name__ == "__main__":
                 "Mở Hermes Dashboard", "?nav=hermes&tab=manage", new_tab=False)
 
         elif tab == "talk":
-            _hermes_feature_panel("🎙️", "Talk",
-                "Kênh hội thoại thời gian thực với Hermes (voice/relay). Cấu hình Channels & Webhooks trong Hermes Dashboard.",
-                "Mở Hermes Dashboard", "?nav=hermes&tab=manage", new_tab=False)
+            st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size:16px; font-weight:600; color:#ffffff; margin-bottom:4px;'>🎙️ Talk — Hermes trả lời bằng giọng MiniMax</div>", unsafe_allow_html=True)
+            st.caption("Nhắn cho Hermes, nhận câu trả lời và nghe đọc bằng giọng MiniMax (TTS).")
+
+            mm_ready = bool(st.secrets.get("MINIMAX_API_KEY") and st.secrets.get("MINIMAX_GROUP_ID"))
+            if not mm_ready:
+                st.markdown(
+                    "<div style='background:rgba(25,20,40,0.4); border:1px solid rgba(255,255,255,0.06); "
+                    "border-radius:12px; padding:40px 28px; text-align:center; min-height:300px; display:flex; "
+                    "flex-direction:column; justify-content:center; align-items:center; gap:12px;'>"
+                    "<span style='font-size:46px;'>🎙️</span>"
+                    "<h5 style='color:#ffffff; margin:0; font-size:16px; font-weight:600;'>Kết nối MiniMax voice để bật Talk</h5>"
+                    "<p style='color:#8b92b6; font-size:13px; max-width:560px; margin:0; line-height:1.6;'>"
+                    "Thêm 2 secret <code>MINIMAX_API_KEY</code> và <code>MINIMAX_GROUP_ID</code> (lấy ở platform.minimax.io) "
+                    "vào <code>.streamlit/secrets.toml</code> (local) hoặc Streamlit Cloud → Settings → Secrets. "
+                    "Tùy chọn ghi đè: <code>MINIMAX_VOICE_ID</code>, <code>MINIMAX_TTS_MODEL</code>.</p>"
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.session_state.setdefault("talk_msgs", [])
+                for m in st.session_state.talk_msgs:
+                    with st.chat_message(m["role"]):
+                        st.markdown(m["content"])
+                        if m.get("audio"):
+                            st.audio(m["audio"], format="audio/mp3")
+
+                prompt = st.chat_input("Nói gì với Hermes...")
+                if prompt:
+                    st.session_state.talk_msgs.append({"role": "user", "content": prompt})
+                    with st.chat_message("user"):
+                        st.markdown(prompt)
+                    with st.chat_message("assistant"):
+                        with st.spinner("Hermes đang trả lời..."):
+                            reply = hermes_chat_reply(prompt)
+                        st.markdown(reply)
+                        with st.spinner("Đang tạo giọng nói MiniMax..."):
+                            audio, err = minimax_tts(reply)
+                        if audio:
+                            st.audio(audio, format="audio/mp3")
+                        elif err:
+                            st.caption(f"⚠️ {err}")
+                    st.session_state.talk_msgs.append({"role": "assistant", "content": reply, "audio": audio})
+
+                st.divider()
+                with st.expander("🔊 Đọc văn bản bất kỳ bằng giọng MiniMax"):
+                    tts_text = st.text_area("Văn bản", key="talk_tts_text", placeholder="Nhập văn bản để nghe...", height=100)
+                    if st.button("Đọc bằng giọng MiniMax", key="talk_tts_btn"):
+                        if tts_text.strip():
+                            with st.spinner("Đang tạo giọng nói..."):
+                                audio2, err2 = minimax_tts(tts_text)
+                            if audio2:
+                                st.audio(audio2, format="audio/mp3")
+                            else:
+                                st.error(err2 or "Lỗi không xác định.")
+                        else:
+                            st.warning("Nhập văn bản trước đã.")
 
         elif tab == "jarvis":
             _hermes_feature_panel("🛰️", "Jarvis",

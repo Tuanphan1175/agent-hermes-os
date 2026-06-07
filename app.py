@@ -1085,10 +1085,22 @@ def deploy_campaign_to_netlify(campaign: dict) -> dict:
 def render_custom_header(num: str, section_type: str, section_name: str, desc: str) -> None:
     # Giờ Ho Chi Minh (UTC+7, không DST) tính lúc render.
     hcm_time = datetime.now(timezone(timedelta(hours=7))).strftime("%H:%M")
+    # Nút Back: hiện ở mọi view trừ trang chủ (agenthq) — quay về Agent HQ.
+    # Dùng anchor ?nav= thật (KHÔNG javascript:history.back vì Streamlit lọc bỏ scheme đó).
+    current_nav = st.query_params.get("nav", "agenthq")
+    back_btn = "" if current_nav == "agenthq" else (
+        '<a href="?nav=agenthq" target="_self" class="nav-link" '
+        'style="display:inline-flex; align-items:center; gap:6px; font-family:\'Outfit\',sans-serif; '
+        'font-size:12px; color:#a5a1c0 !important; background:rgba(30,24,52,0.5); '
+        'border:1px solid rgba(255,255,255,0.06); padding:5px 12px; border-radius:8px; '
+        'text-decoration:none; margin-bottom:12px; transition:all 0.2s;">'
+        '<span style="font-size:15px; line-height:1;">&larr;</span> Back</a>'
+    )
     st.markdown(f"""
     <div style="position: relative; margin-bottom: 2rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 1.2rem;">
         <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap:15px;">
             <div>
+                {back_btn}
                 <div style="font-family: 'Cinzel', serif; font-size: 12px; color: #8b8ea9; letter-spacing: 4px; text-transform: uppercase;">
                     {num}. &mdash; {section_type} - {section_name}
                 </div>

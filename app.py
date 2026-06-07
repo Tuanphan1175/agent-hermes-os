@@ -1521,7 +1521,7 @@ if active in AGENTS:
                     <a class="nav-link" target="_self" href="?nav=hermes&tab=goal&goal_id={g['id']}" style="text-decoration:none;">
                         <div style="padding: 12px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 8px; cursor: pointer; transition: all 0.2s; {active_border}">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <span style="font-size:13.5px; font-weight:500; color:#ffffff;">{g['title']}</span>
+                                <span style="font-size:13.5px; font-weight:500; color:#ffffff;">{escape(str(g['title']))}</span>
                                 <span style="font-size:9px; font-weight:700; padding:2px 6px; border-radius:10px; {status_color}">{g['status'].upper()}</span>
                             </div>
                             <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:#7d7796; margin-top:5px;">
@@ -1551,31 +1551,33 @@ if active in AGENTS:
                     </div>
                     """, unsafe_allow_html=True)
                 else:
-                    # Renders active logs stream
-                    st.markdown(f"""
-                    <div style="background: rgba(30,24,52,0.4); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 16px; margin-bottom: 12px;">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                            <span style="font-size:14.5px; font-weight:600; color:#ffffff;">{active_goal['title']}</span>
-                            <span style="font-size:11px; color:#5ad7e6; font-weight:500;">{active_goal['progress']}% complete</span>
-                        </div>
-                        <div style="font-size:12px; color:#8b92b6; line-height:1.4; margin-bottom:15px; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:10px;">
-                            <b>Goal Target:</b> {active_goal['prompt']}
-                        </div>
-                        
-                        <div style="font-size:11px; font-weight:700; color:#5b5478; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; display:flex; align-items:center; gap:5px;">
-                            <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#34d399;"></span> Console Thoughts Log Stream
-                        </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Console logs body
-                    logs_html = "".join([f"<div style='margin-bottom:6px; line-height:1.4;'><span style='color:#7d7796;'>[{active_goal['created_at']}]</span> {escape(l)}</div>" for l in active_goal["logs"]])
-                    
-                    st.markdown(f"""
-                    <div style="background: rgba(13,9,26,0.85); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 15px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #34d399; min-height: 250px; max-height: 320px; overflow-y: auto; box-shadow: inset 0 0 15px rgba(0,0,0,0.5);">
-                        {logs_html}
-                    </div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    # Console logs body (mỗi dòng escape chống XSS)
+                    logs_html = "".join(
+                        f"<div style='margin-bottom:6px; line-height:1.4;'>"
+                        f"<span style='color:#7d7796;'>[{escape(str(active_goal['created_at']))}]</span> {escape(l)}</div>"
+                        for l in active_goal["logs"]
+                    )
+                    # Một khối HTML cân bằng, KHÔNG thụt đầu dòng bên trong chuỗi — tránh
+                    # việc Markdown hiểu nhầm dòng thụt-sau-dòng-trống thành code block
+                    # (nguyên nhân lỗi rò HTML thô trước đây).
+                    st.markdown(
+                        '<div style="background: rgba(30,24,52,0.4); border:1px solid rgba(255,255,255,0.06); border-radius:12px; padding:16px; margin-bottom:12px;">'
+                        '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">'
+                        f'<span style="font-size:14.5px; font-weight:600; color:#ffffff;">{escape(str(active_goal["title"]))}</span>'
+                        f'<span style="font-size:11px; color:#5ad7e6; font-weight:500;">{active_goal["progress"]}% complete</span>'
+                        '</div>'
+                        '<div style="font-size:12px; color:#8b92b6; line-height:1.4; margin-bottom:15px; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:10px;">'
+                        f'<b>Goal Target:</b> {escape(str(active_goal["prompt"]))}'
+                        '</div>'
+                        '<div style="font-size:11px; font-weight:700; color:#5b5478; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; display:flex; align-items:center; gap:5px;">'
+                        '<span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#34d399;"></span> Console Thoughts Log Stream'
+                        '</div>'
+                        '<div style="background: rgba(13,9,26,0.85); border:1px solid rgba(255,255,255,0.07); border-radius:10px; padding:15px; font-family:\'JetBrains Mono\', monospace; font-size:11.5px; color:#34d399; min-height:250px; max-height:320px; overflow-y:auto; box-shadow: inset 0 0 15px rgba(0,0,0,0.5);">'
+                        f'{logs_html}'
+                        '</div>'
+                        '</div>',
+                        unsafe_allow_html=True,
+                    )
             
         elif tab == "workspace":
             st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)

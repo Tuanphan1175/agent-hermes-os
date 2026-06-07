@@ -1704,17 +1704,23 @@ if active in AGENTS:
                 """, unsafe_allow_html=True)
                 
                 if "landing" in current_file or "index" in current_file or "testimonials" in current_file:
+                    # Nút Join AIPB: lấy URL từ secret AIPB_URL; chưa cấu hình thì ẩn nút (tránh link chết "#").
+                    aipb_url = st.secrets.get("AIPB_URL")
+                    aipb_btn = (
+                        f'<a href="{escape(aipb_url)}" target="_blank" rel="noopener noreferrer" '
+                        'style="display:inline-block; background: linear-gradient(135deg, #ff9d4d, #ff6a3d); '
+                        'color:#ffffff; font-weight:700; font-size:13px; padding: 8px 22px; border-radius: 8px; '
+                        'text-decoration:none; box-shadow: 0 0 15px rgba(255,106,61,0.35);">Join AIPB &rarr;</a>'
+                    ) if aipb_url else ""
                     # st.html() render HTML thô, không qua markdown -> tránh bug HTML thụt lề
                     # + dòng trống bị biến thành code block (LIVE PREVIEW hiện code thay vì trang).
-                    st.html("""
+                    preview_html = """
                     <div style="background: linear-gradient(160deg, #151125 0%, #0c0817 100%); border: 1px solid rgba(255,255,255,0.06); border-radius: 0 0 12px 12px; padding: 25px; min-height: 420px; color: #d8d4e6; font-family: 'Outfit', sans-serif;">
                         
                         <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 15px; border-radius: 12px; text-align: center; margin-bottom: 25px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
                             <span style="color:#fb7185; font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:1px;">★ Get the full Agent OS install + every layer in this guide inside the</span>
                             <h4 style="margin: 5px 0 15px 0; color:#ffffff; font-size:17px; font-weight:600;">AI Profit Boardroom</h4>
-                            <a href="#" style="display:inline-block; background: linear-gradient(135deg, #ff9d4d, #ff6a3d); color:#ffffff; font-weight:700; font-size:13px; padding: 8px 22px; border-radius: 8px; text-decoration:none; box-shadow: 0 0 15px rgba(255,106,61,0.35);">
-                                Join AIPB →
-                            </a>
+                            __AIPB_BUTTON__
                         </div>
                         
                         <div style="border-left: 2px solid #5ad7e6; padding-left: 15px; margin-bottom: 25px;">
@@ -1741,7 +1747,8 @@ if active in AGENTS:
                             </p>
                         </div>
                     </div>
-                    """)
+                    """
+                    st.html(preview_html.replace("__AIPB_BUTTON__", aipb_btn))
                 elif "py" in current_file:
                     st.code(f"""# {current_file} - Local Sync Core Engine
 import os

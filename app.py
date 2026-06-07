@@ -1127,9 +1127,6 @@ def render_custom_header(num: str, section_type: str, section_name: str, desc: s
                 <div style="font-family: monospace; font-size: 11px; color: #8b92b6; background: rgba(30,24,52,0.5); border: 1px solid rgba(255,255,255,0.05); padding: 6px 12px; border-radius: 8px; font-weight:500;">
                     {hcm_time} LOCAL &bull; HO CHI MINH
                 </div>
-                <a href="#" class="nav-link" style="display: flex; align-items: center; gap: 6px; font-family: 'Outfit', sans-serif; font-size: 13px; color: #a5a1c0 !important; background: rgba(30,24,52,0.5); border: 1px solid rgba(255,255,255,0.05); padding: 6px 14px; border-radius: 8px; text-decoration: none; transition: all 0.2s;">
-                    <span style="font-size: 11px; background:rgba(255,255,255,0.08); padding:1px 5px; border-radius:4px; margin-right:2px;">⌘K</span> Command palette
-                </a>
                 <a href="?nav=mission" target="_self" class="nav-link" style="display: flex; align-items: center; gap: 6px; font-family: 'Outfit', sans-serif; font-size: 13px; color: #a5a1c0 !important; background: rgba(30,24,52,0.5); border: 1px solid rgba(255,255,255,0.05); padding: 6px 14px; border-radius: 8px; text-decoration: none; transition: all 0.2s; letter-spacing: 0.5px;">
                     <span style="color:#5ad7e6; font-size:13px;">▦</span> ALL SYSTEMS
                 </a>

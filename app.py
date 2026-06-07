@@ -1791,9 +1791,31 @@ if __name__ == "__main__":
                 """, unsafe_allow_html=True)
 
             st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
-            if not reachable:
-                st.caption(f"Dashboard nhúng tải trực tiếp trong trình duyệt của bạn từ {host}. Nếu trang trống: dashboard chưa chạy, hoặc chặn nhúng (X-Frame-Options) — bấm **Open in tab**. Đổi địa chỉ qua secret `HERMES_DASHBOARD_URL`.")
-            st.components.v1.iframe(dash_url, height=720, scrolling=True)
+            # Chỉ nhúng iframe khi máy chủ app thật sự kết nối được dashboard.
+            # Tránh nhúng localhost vào app đã deploy (HTTPS) -> trình duyệt báo "refused to connect".
+            if reachable:
+                st.components.v1.iframe(dash_url, height=720, scrolling=True)
+            else:
+                is_local = ("localhost" in host) or host.startswith("127.")
+                reason = (
+                    "Dashboard chạy cục bộ (localhost) nên app đã deploy (HTTPS) không nhúng được: trình duyệt "
+                    "chặn nội dung http trong trang https, và localhost trỏ về máy người xem chứ không phải máy chủ."
+                    if is_local else
+                    "Máy chủ app không kết nối được tới dashboard (chưa chạy, sai địa chỉ, hoặc bị chặn nhúng qua X-Frame-Options)."
+                )
+                st.markdown(
+                    "<div style='background:rgba(25,20,40,0.4); border:1px solid rgba(255,255,255,0.06); "
+                    "border-radius:12px; padding:48px 28px; text-align:center; min-height:360px; display:flex; "
+                    "flex-direction:column; justify-content:center; align-items:center; gap:12px;'>"
+                    "<span style='font-size:46px;'>🖥️</span>"
+                    "<h5 style='color:#ffffff; margin:0; font-size:16px; font-weight:600;'>Hermes Dashboard chưa nhúng được</h5>"
+                    f"<p style='color:#8b92b6; font-size:13px; max-width:540px; margin:0; line-height:1.6;'>{escape(reason)}</p>"
+                    "<p style='color:#8b92b6; font-size:13px; max-width:540px; margin:0; line-height:1.6;'>"
+                    "Bấm <b style='color:#5ad7e6;'>⧉ Open in tab</b> ở trên (nếu bạn đang chạy dashboard cục bộ), "
+                    "hoặc đặt secret <code>HERMES_DASHBOARD_URL</code> thành một URL HTTPS công khai để nhúng tại đây.</p>"
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
 
         elif tab == "sessions":
             _hermes_feature_panel("🗂️", "Sessions",

@@ -1819,59 +1819,47 @@ if active in AGENTS:
 
         if tab == "chat":
             st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
-            url = st.secrets.get("HERMES_API_URL")
-            key = st.secrets.get("HERMES_API_KEY")
-            
+
             # Sub-header
             st.markdown("<div style='font-size:16px; font-weight:600; color:#ffffff; margin-bottom:12px;'>✦ Live Chat Terminal</div>", unsafe_allow_html=True)
 
             # Bảng định tuyến model — hiển thị thống nhất với Agent HQ drawer
             st.markdown(hermes_model_card_html(), unsafe_allow_html=True)
 
-            if not url:
-                # Provide gorgeous preview messages inside chat if no API is available
-                if "hermes_msgs" not in st.session_state:
-                    st.session_state.hermes_msgs = [
-                        {"role": "assistant", "content": "### Suggested Long-Tail Phrases for YouTube/SEO Content\n- \"AI Profit Boardroom worth it\"\n- \"how I built a $100k MRR AI community on Skool\"\n- \"n8n automations inside AI Profit Boardroom\"\n- \"Hermes Agent setup for AIPB members\"\n- \"daily AI coaching community\"\n- \"free AI Money Lab to paid AIPB\"\n\nThese directly mirror the language, value props, funnel mechanics, and tech stack documented in your AIPB Operations, AIPB Growth, and Funnel Strategy notes.\nFocus on the freemium path (YouTube -> AI Money Lab -> AIPB) and the specific value stack (n8n vault, Daily QA, live calls, guarantees) for the strongest alignment with what you're already tracking in the vault."}
-                    ]
-            
-            # Render chat
+            # Ô chat chung: chọn Model tuỳ ý + gọi Skill (đóng vai chuyên gia đã lưu)
+            _skills = load_skills()
+            _skill_names = [s.get("name", "(chưa đặt tên)") for s in _skills]
+            cc_model, cc_skill = st.columns(2)
+            with cc_model:
+                chat_model = st.selectbox("Model", ARENA_MODEL_CHOICES, key="hermes_chat_model")
+                _ok, _note = model_status(chat_model)
+                st.caption(("🟢 " if _ok else "🟡 ") + _note)
+            with cc_skill:
+                _choice = st.selectbox("Skill (đóng vai)", ["— Chat thường —"] + _skill_names, key="hermes_chat_skill")
+                _active_skill = next((s for s in _skills if s.get("name") == _choice), None) if _choice != "— Chat thường —" else None
+                st.caption(f"🎭 {_active_skill['name']}" if _active_skill else "Không dùng Skill")
+
+            # Render lịch sử chat
             for m in st.session_state.get("hermes_msgs", []):
                 with st.chat_message(m["role"]):
                     st.markdown(m["content"])
-            
+
             prompt = st.chat_input("Message Hermes...")
             if prompt:
                 st.session_state.setdefault("hermes_msgs", []).append({"role": "user", "content": prompt})
                 with st.chat_message("user"):
                     st.markdown(prompt)
-                
+
                 with st.chat_message("assistant"):
-                    with st.spinner("Hermes is reasoning..."):
-                        if url:
-                            try:
-                                headers = {"Content-Type": "application/json"}
-                                if key:
-                                    headers["Authorization"] = f"Bearer {key}"
-                                r = httpx.post(f"{url.rstrip('/')}/chat", json={"message": prompt}, headers=headers, timeout=180)
-                                if r.status_code == 401:
-                                    reply = ("⚠️ **401 Unauthorized** — `HERMES_API_KEY` không khớp với shim trên VPS.\n\n"
-                                             "Sửa: copy đúng key trong `/root/.hermes/hermes-api.env` (VPS) vào Streamlit Cloud "
-                                             "→ **Settings → Secrets** (`HERMES_API_KEY`) cho khớp, rồi rerun app. Xem `vps/README.md`.")
-                                else:
-                                    r.raise_for_status()
-                                    raw_reply = r.json().get("reply", "")
-                                    cleaned = raw_reply.split("\n")
-                                    cleaned = [line for line in cleaned if not (("Hermes" in line) and ("─" in line or "═" in line))]
-                                    cleaned = [line.replace("│", "").strip() for line in cleaned]
-                                    cleaned = [line for line in cleaned if not all(c in "─╭╰╯╮┬┴┼═║╔╗╚╝░▒▓█▄▀■-—_=+*#" for c in line.strip())]
-                                    reply = "\n".join([l for l in cleaned if l.strip()]).strip()
-                                    if not reply:
-                                        reply = raw_reply.strip()
-                            except Exception as e:
-                                reply = f"⚠️ Hermes API error: {e}"
-                        else:
-                            reply = f"Hermes processing query: \"{prompt}\". (Live VPS shim connection pending API configuration in secrets)."
+                    with st.spinner(f"{chat_model} đang trả lời..."):
+                        parts = []
+                        if _active_skill and _active_skill.get("prompt"):
+                            parts.append("Hãy đóng vai theo chỉ dẫn sau, trả lời bằng tiếng Việt:\n" + _active_skill["prompt"])
+                        for m in st.session_state.hermes_msgs[-10:]:
+                            who = "Người dùng" if m["role"] == "user" else "Trợ lý"
+                            parts.append(f"{who}: {m['content']}")
+                        parts.append("Trợ lý:")
+                        reply = run_model(chat_model, "\n\n".join(parts))
                         st.markdown(reply)
                 st.session_state.hermes_msgs.append({"role": "assistant", "content": reply})
                 

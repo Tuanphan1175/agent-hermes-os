@@ -1114,80 +1114,109 @@ def render_workspace_bucket_nav(selected_bucket: str) -> None:
 
 
 def render_skills_panel() -> None:
-    """Bảng Skill bên phải (kiểu CharmIQ Charms): tìm, mở xem, dùng lại, xóa."""
+    """Bảng Skill (Charms): mỗi Skill gán MODEL riêng (tuỳ chọn) + nút ▶ Dùng để
+    gọi Skill đó vào ô chat (trả lời bằng đúng model được gán)."""
     all_skills = load_skills()
+    active_id = st.session_state.get("active_skill_id")
     st.markdown(
         "<div style='display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;'>"
-        "<span style='font-size:13px; font-weight:700; color:#f3f1fb;'>⚡ Skills</span>"
+        "<span style='font-size:13px; font-weight:700; color:#f3f1fb;'>⚡ Skills (Charms)</span>"
         f"<span style='font-size:11px; color:#5ad7e6; background:rgba(90,215,230,0.1); padding:1px 8px; border-radius:6px; font-weight:600;'>{len(all_skills)}</span>"
         "</div>",
         unsafe_allow_html=True,
     )
+    if not all_skills:
+        st.caption("Chưa có Skill. Vào chế độ 🆚 So sánh, chọn bản tốt rồi “Lưu thành Skill”.")
+        return
     q = st.text_input("Tìm Skill", key="skill_search", placeholder="Search by Name", label_visibility="collapsed")
     skills = all_skills
     if q:
         ql = q.lower()
         skills = [s for s in all_skills if ql in (str(s.get("name", "")) + str(s.get("prompt", ""))).lower()]
-    if not skills:
-        st.caption("Chưa có Skill. Tạo nội dung, chọn bản tốt rồi “Lưu thành Skill”.")
-        return
+
+    dirty = False
     for s in skills[:40]:
-        with st.expander(f"▶ {s.get('name', '(chưa đặt tên)')}"):
-            st.caption(f"{s.get('model', '?')} · {s.get('ts', '')}")
-            if s.get("note"):
-                st.caption(f"📝 {s['note']}")
-            st.markdown(s.get("answer", ""))
+        sid = s.get("id")
+        is_active = (sid == active_id)
+        with st.expander(("✅ " if is_active else "▶ ") + s.get("name", "(chưa đặt tên)"), expanded=is_active):
+            # Gán model riêng cho Skill (tuỳ chọn của người dùng)
+            cur = s.get("model", ARENA_MODEL_CHOICES[0])
+            idx = ARENA_MODEL_CHOICES.index(cur) if cur in ARENA_MODEL_CHOICES else 0
+            chosen = st.selectbox("Model của Skill", ARENA_MODEL_CHOICES, index=idx, key=f"skill_model_{sid}")
+            if chosen != s.get("model"):
+                s["model"] = chosen
+                dirty = True
+            ok, note = model_status(chosen)
+            st.caption(("🟢 " if ok else "🟡 ") + note)
+            if s.get("prompt"):
+                pv = s["prompt"]
+                st.caption("🎭 " + pv[:120] + ("…" if len(pv) > 120 else ""))
             b1, b2 = st.columns(2)
             with b1:
-                if st.button("↻ Dùng lại", key=f"skill_use_{s.get('id')}", use_container_width=True):
-                    st.session_state["arena_prefill"] = s.get("prompt", "")
+                if st.button("✕ Thôi dùng" if is_active else "▶ Dùng", key=f"skill_use_{sid}", use_container_width=True):
+                    st.session_state["active_skill_id"] = None if is_active else sid
                     st.rerun()
             with b2:
-                if st.button("🗑 Xóa", key=f"skill_del_{s.get('id')}", use_container_width=True):
-                    save_skills([x for x in all_skills if x.get("id") != s.get("id")])
+                if st.button("🗑 Xóa", key=f"skill_del_{sid}", use_container_width=True):
+                    if is_active:
+                        st.session_state["active_skill_id"] = None
+                    save_skills([x for x in all_skills if x.get("id") != sid])
                     st.rerun()
+    if dirty:
+        save_skills(all_skills)
+        st.rerun()
 
 
 def render_chat_pane() -> None:
-    """Ô chat chung: chọn Model tuỳ ý + gọi Skill (đóng vai chuyên gia đã lưu),
-    hội thoại nhiều lượt. Skill được chọn sẽ định hướng câu trả lời."""
+    """Ô chat: gọi Skill (Charm) từ bảng phải -> trả lời bằng MODEL gán cho Skill đó;
+    hoặc chat thường với model mặc định tuỳ chọn."""
     if st.session_state.pop("ws_chat_clear", False):
         st.session_state.pop("ws_chat_input", None)
 
     skills = load_skills()
-    skill_names = [s.get("name", "(chưa đặt tên)") for s in skills]
+    active_skill = next((s for s in skills if s.get("id") == st.session_state.get("active_skill_id")), None)
 
-    c_model, c_skill = st.columns(2)
-    with c_model:
-        model = st.selectbox("Model", ARENA_MODEL_CHOICES, key="chat_model")
-        ok, note = model_status(model)
-        st.caption(("🟢 " if ok else "🟡 ") + note)
-    with c_skill:
-        choice = st.selectbox("Skill (đóng vai)", ["— Chat thường —"] + skill_names, key="chat_skill")
-        active_skill = next((s for s in skills if s.get("name") == choice), None) if choice != "— Chat thường —" else None
-        st.caption(f"🎭 {active_skill['name']}" if active_skill else "Không dùng Skill")
+    if active_skill:
+        eff_model = active_skill.get("model", ARENA_MODEL_CHOICES[0])
+        ok, _ = model_status(eff_model)
+        bl, br = st.columns([4, 1])
+        with bl:
+            st.markdown(
+                f"<div style='background:rgba(120,90,230,0.12); border:1px solid rgba(120,90,230,0.3); "
+                f"border-radius:10px; padding:8px 12px;'>"
+                f"<span style='color:#b9a9ff; font-weight:700; font-size:13px;'>🎭 {escape(active_skill.get('name', 'Skill'))}</span>"
+                f"<span style='color:#8b92b6; font-size:12px;'> · model {escape(eff_model)} {'🟢' if ok else '🟡'}</span></div>",
+                unsafe_allow_html=True,
+            )
+        with br:
+            if st.button("✕ Thôi", key="chat_skill_off", use_container_width=True):
+                st.session_state["active_skill_id"] = None
+                st.rerun()
+    else:
+        eff_model = st.selectbox("Model (chat thường)", ARENA_MODEL_CHOICES, key="chat_model")
+        ok, note = model_status(eff_model)
+        st.caption(("🟢 " if ok else "🟡 ") + note + " — hoặc bấm ▶ Dùng một Skill bên phải để gọi chuyên gia.")
 
     history = st.session_state.setdefault("ws_chat", [])
-
-    head_l, head_r = st.columns([4, 1])
-    with head_l:
-        st.caption(f"💬 {len(history)} tin nhắn" + (f" · 🎭 {active_skill['name']}" if active_skill else ""))
-    with head_r:
+    hl, hr = st.columns([4, 1])
+    with hl:
+        st.caption(f"💬 {len(history)} tin nhắn")
+    with hr:
         if st.button("🗑 Xoá", key="ws_chat_reset", use_container_width=True):
             st.session_state["ws_chat"] = []
             st.rerun()
 
-    box = st.container(height=340)
+    box = st.container(height=320)
     with box:
         if not history:
-            st.caption("Bắt đầu trò chuyện. Chọn Skill để model đóng vai chuyên gia đã lưu; đổi Model để dùng provider khác.")
+            st.caption("Gọi một Skill bên phải (▶ Dùng) rồi nhắn yêu cầu — Skill trả lời bằng model được gán cho nó. Mỗi Skill có thể dùng model khác nhau.")
         for msg in history:
             with st.chat_message("user" if msg["role"] == "user" else "assistant"):
                 st.markdown(msg["content"])
 
     user_msg = st.text_area(
         "Tin nhắn", key="ws_chat_input", height=80, label_visibility="collapsed",
-        placeholder="Nhắn gì đó... (Skill đã chọn sẽ định hướng câu trả lời)",
+        placeholder="Nhắn yêu cầu cho Skill / chat...",
     )
     if st.button("Gửi ▸", type="primary", use_container_width=True):
         if not user_msg.strip():
@@ -1201,8 +1230,8 @@ def render_chat_pane() -> None:
                 who = "Người dùng" if msg["role"] == "user" else "Trợ lý"
                 parts.append(f"{who}: {msg['content']}")
             parts.append("Trợ lý:")
-            with st.spinner(f"{model} đang trả lời..."):
-                reply = run_model(model, "\n\n".join(parts))
+            with st.spinner(f"{eff_model} đang trả lời..."):
+                reply = run_model(eff_model, "\n\n".join(parts))
             history.append({"role": "assistant", "content": reply})
             st.session_state["ws_chat"] = history
             st.session_state["ws_chat_clear"] = True

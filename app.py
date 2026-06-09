@@ -1148,14 +1148,190 @@ def render_skills_panel() -> None:
                     st.rerun()
 
 
-def render_workspace_compare(selected_bucket: str) -> None:
-    """Workspace Studio (kiểu CharmIQ): tạo nội dung qua nhiều model THẬT, đánh giá,
-    chọn bản tốt hơn, rồi lưu thành Skill (tái sử dụng ở bảng Skills bên phải)."""
+def render_chat_pane() -> None:
+    """Ô chat chung: chọn Model tuỳ ý + gọi Skill (đóng vai chuyên gia đã lưu),
+    hội thoại nhiều lượt. Skill được chọn sẽ định hướng câu trả lời."""
+    if st.session_state.pop("ws_chat_clear", False):
+        st.session_state.pop("ws_chat_input", None)
 
+    skills = load_skills()
+    skill_names = [s.get("name", "(chưa đặt tên)") for s in skills]
+
+    c_model, c_skill = st.columns(2)
+    with c_model:
+        model = st.selectbox("Model", ARENA_MODEL_CHOICES, key="chat_model")
+        ok, note = model_status(model)
+        st.caption(("🟢 " if ok else "🟡 ") + note)
+    with c_skill:
+        choice = st.selectbox("Skill (đóng vai)", ["— Chat thường —"] + skill_names, key="chat_skill")
+        active_skill = next((s for s in skills if s.get("name") == choice), None) if choice != "— Chat thường —" else None
+        st.caption(f"🎭 {active_skill['name']}" if active_skill else "Không dùng Skill")
+
+    history = st.session_state.setdefault("ws_chat", [])
+
+    head_l, head_r = st.columns([4, 1])
+    with head_l:
+        st.caption(f"💬 {len(history)} tin nhắn" + (f" · 🎭 {active_skill['name']}" if active_skill else ""))
+    with head_r:
+        if st.button("🗑 Xoá", key="ws_chat_reset", use_container_width=True):
+            st.session_state["ws_chat"] = []
+            st.rerun()
+
+    box = st.container(height=340)
+    with box:
+        if not history:
+            st.caption("Bắt đầu trò chuyện. Chọn Skill để model đóng vai chuyên gia đã lưu; đổi Model để dùng provider khác.")
+        for msg in history:
+            with st.chat_message("user" if msg["role"] == "user" else "assistant"):
+                st.markdown(msg["content"])
+
+    user_msg = st.text_area(
+        "Tin nhắn", key="ws_chat_input", height=80, label_visibility="collapsed",
+        placeholder="Nhắn gì đó... (Skill đã chọn sẽ định hướng câu trả lời)",
+    )
+    if st.button("Gửi ▸", type="primary", use_container_width=True):
+        if not user_msg.strip():
+            st.warning("Nhập tin nhắn trước khi gửi.")
+        else:
+            history.append({"role": "user", "content": user_msg.strip()})
+            parts = []
+            if active_skill and active_skill.get("prompt"):
+                parts.append("Hãy đóng vai theo chỉ dẫn sau, trả lời bằng tiếng Việt:\n" + active_skill["prompt"])
+            for msg in history[-10:]:
+                who = "Người dùng" if msg["role"] == "user" else "Trợ lý"
+                parts.append(f"{who}: {msg['content']}")
+            parts.append("Trợ lý:")
+            with st.spinner(f"{model} đang trả lời..."):
+                reply = run_model(model, "\n\n".join(parts))
+            history.append({"role": "assistant", "content": reply})
+            st.session_state["ws_chat"] = history
+            st.session_state["ws_chat_clear"] = True
+            st.rerun()
+
+
+def render_arena_pane() -> None:
+    """Chế độ So sánh: 1 prompt -> 2–4 model cạnh nhau -> chọn bản tốt -> lưu Skill."""
     # Nạp prompt từ Skill "Dùng lại" — phải đặt TRƯỚC khi tạo widget text_area.
     if "arena_prefill" in st.session_state:
         st.session_state["arena_prompt"] = st.session_state.pop("arena_prefill")
 
+    st.caption(
+        "ℹ️ Mỗi cột gọi provider thật. “Hermes · deepseek” = agent live. OpenAI / Google / "
+        "DeepSeek / MiniMax gọi API trực tiếp — 🟡 = thiếu key, 🟢 = sẵn sàng."
+    )
+
+    n = st.radio("Số model so sánh", [2, 3, 4], horizontal=True, key="arena_num")
+    sel_cols = st.columns(n)
+    chosen_models = []
+    for i in range(n):
+        with sel_cols[i]:
+            m = st.selectbox(
+                f"Cột {i + 1}",
+                ARENA_MODEL_CHOICES,
+                index=min(i, len(ARENA_MODEL_CHOICES) - 1),
+                key=f"arena_model_{i}",
+            )
+            ok, note = model_status(m)
+            st.caption(("🟢 " if ok else "🟡 ") + note)
+            chosen_models.append(m)
+
+    prompt = st.text_area(
+        "Yêu cầu của bạn",
+        key="arena_prompt",
+        height=120,
+        placeholder="VD: Viết mở bài cho khóa học '21 ngày chia tay bệnh tiểu đường'...",
+    )
+
+    if st.button("🚀 Tạo & so sánh", type="primary", use_container_width=True):
+        if not prompt.strip():
+            st.warning("Nhập yêu cầu trước khi chạy.")
+        else:
+            results = []
+            with st.spinner(f"Đang chạy {n} model thật..."):
+                for m in chosen_models:
+                    t0 = time.time()
+                    ans = run_model(m, prompt.strip())
+                    results.append({
+                        "model": m,
+                        "answer": ans,
+                        "elapsed": round(time.time() - t0, 1),
+                        "chars": len(ans),
+                    })
+            st.session_state["arena_run"] = {"prompt": prompt.strip(), "results": results}
+            st.session_state.pop("arena_winner", None)
+
+    run_data = st.session_state.get("arena_run")
+    if run_data:
+        st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
+        results = run_data["results"]
+        res_cols = st.columns(len(results))
+        winner = st.session_state.get("arena_winner")
+        for i, r in enumerate(results):
+            with res_cols[i]:
+                is_win = (winner == i)
+                accent = "#34d399" if is_win else "#5ad7e6"
+                crown = "🏆 " if is_win else ""
+                st.markdown(
+                    f"<div style='border-top:2px solid {accent}; background:rgba(30,24,52,0.5); "
+                    f"border:1px solid rgba(255,255,255,0.07); border-radius:10px; "
+                    f"padding:8px 12px; margin-bottom:8px;'>"
+                    f"<div style='font-size:13px; font-weight:700; color:#fff;'>{crown}{escape(r['model'])}</div>"
+                    f"<div style='font-size:10px; color:#8b92b6; font-family:JetBrains Mono,monospace;'>"
+                    f"⏱ {r['elapsed']}s · {r['chars']} ký tự</div></div>",
+                    unsafe_allow_html=True,
+                )
+                st.markdown(r["answer"])
+                label = "✓ Đã chọn" if is_win else "Chọn bản này"
+                if st.button(label, key=f"arena_pick_{i}", use_container_width=True, disabled=is_win):
+                    st.session_state["arena_winner"] = i
+                    st.rerun()
+
+        if winner is not None:
+            win = results[winner]
+            st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+            st.markdown(
+                f"<div style='background:rgba(52,211,153,0.08); border:1px solid rgba(52,211,153,0.25); "
+                f"border-radius:10px; padding:10px 14px; margin-bottom:8px;'>"
+                f"<span style='color:#34d399; font-weight:700; font-size:13px;'>🏆 Đã chọn: {escape(win['model'])}</span>"
+                f" <span style='color:#8b92b6; font-size:12px;'>— lưu lại để tái sử dụng</span></div>",
+                unsafe_allow_html=True,
+            )
+            skill_name = st.text_input(
+                "Tên Skill",
+                key="skill_name",
+                placeholder="VD: Chuyên gia viết mở bài khóa học",
+            )
+            note = st.text_area(
+                "Ghi chú đánh giá / phản biện (tùy chọn)",
+                key="arena_note",
+                height=70,
+                placeholder="Vì sao bản này tốt hơn? Điểm cần chỉnh khi dùng lại...",
+            )
+            if st.button("💾 Lưu thành Skill", use_container_width=True):
+                if not skill_name.strip():
+                    st.warning("Đặt tên cho Skill trước khi lưu.")
+                else:
+                    entry = {
+                        "id": f"sk_{int(time.time())}",
+                        "name": skill_name.strip(),
+                        "ts": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        "prompt": run_data["prompt"],
+                        "model": win["model"],
+                        "answer": win["answer"],
+                        "note": note.strip(),
+                        "models_compared": [r["model"] for r in results],
+                    }
+                    skills = load_skills()
+                    skills.insert(0, entry)
+                    if save_skills(skills):
+                        st.success(f"Đã lưu Skill “{skill_name.strip()}” — xem ở bảng Skills bên phải.")
+                    else:
+                        st.warning("Không lưu được — kiểm tra bảng DataStore / quyền ghi anon trên Supabase.")
+
+
+def render_workspace_compare(selected_bucket: str) -> None:
+    """Workspace Studio: cột trái = ô chat chung (chọn Model + gọi Skill) hoặc chế độ
+    So sánh nhiều model; cột phải = thư viện Skill (kiểu CharmIQ)."""
     col_nav, col_main, col_skills = st.columns([0.8, 3, 1.4])
 
     with col_nav:
@@ -1163,135 +1339,21 @@ def render_workspace_compare(selected_bucket: str) -> None:
 
     with col_main:
         st.markdown(
-            "<div style='display:flex; align-items:center; gap:10px; margin-bottom:4px;'>"
-            "<span style='font-size:22px;'>🆚</span>"
-            "<span style='font-size:20px; font-weight:700; color:#f3f1fb;'>Model Arena</span>"
-            "<span style='font-size:11px; color:#5ad7e6; background:rgba(90,215,230,0.1); padding:2px 8px; border-radius:6px; font-weight:600;'>Workspace</span>"
+            "<div style='display:flex; align-items:center; gap:10px; margin-bottom:6px;'>"
+            "<span style='font-size:22px;'>🛰️</span>"
+            "<span style='font-size:20px; font-weight:700; color:#f3f1fb;'>Workspace Studio</span>"
+            "<span style='font-size:11px; color:#5ad7e6; background:rgba(90,215,230,0.1); padding:2px 8px; border-radius:6px; font-weight:600;'>Chat · Skills · Models</span>"
             "</div>",
             unsafe_allow_html=True,
         )
-        st.markdown(
-            "<p style='color:#8b92b6; font-size:13px; margin:0 0 10px 0;'>"
-            "Gửi một yêu cầu tới nhiều model thật, đặt kết quả cạnh nhau để xem xét – "
-            "phản biện – chọn bản tốt hơn, rồi lưu thành <b>Skill</b> để dùng lại.</p>",
-            unsafe_allow_html=True,
+        mode = st.radio(
+            "Chế độ", ["💬 Chat", "🆚 So sánh nhiều model"],
+            horizontal=True, key="ws_mode", label_visibility="collapsed",
         )
-        st.caption(
-            "ℹ️ Mỗi cột gọi provider thật. “Hermes · deepseek” = agent live (hiện route DeepSeek). "
-            "OpenAI / Google / DeepSeek / MiniMax gọi API trực tiếp — cần key tương ứng trong secrets "
-            "(🟡 = thiếu key, 🟢 = sẵn sàng). Thêm key vào Streamlit Secrets là cột sáng lên."
-        )
-
-        # --- Cấu hình số cột + model mỗi cột (kèm trạng thái key thật) ---
-        n = st.radio("Số model so sánh", [2, 3, 4], horizontal=True, key="arena_num")
-        sel_cols = st.columns(n)
-        chosen_models = []
-        for i in range(n):
-            with sel_cols[i]:
-                m = st.selectbox(
-                    f"Cột {i + 1}",
-                    ARENA_MODEL_CHOICES,
-                    index=min(i, len(ARENA_MODEL_CHOICES) - 1),
-                    key=f"arena_model_{i}",
-                )
-                ok, note = model_status(m)
-                st.caption(("🟢 " if ok else "🟡 ") + note)
-                chosen_models.append(m)
-
-        prompt = st.text_area(
-            "Yêu cầu của bạn",
-            key="arena_prompt",
-            height=120,
-            placeholder="VD: Viết mở bài cho khóa học '21 ngày chia tay bệnh tiểu đường'...",
-        )
-
-        if st.button("🚀 Tạo & so sánh", type="primary", use_container_width=True):
-            if not prompt.strip():
-                st.warning("Nhập yêu cầu trước khi chạy.")
-            else:
-                results = []
-                with st.spinner(f"Đang chạy {n} model thật..."):
-                    for m in chosen_models:
-                        t0 = time.time()
-                        ans = run_model(m, prompt.strip())
-                        results.append({
-                            "model": m,
-                            "answer": ans,
-                            "elapsed": round(time.time() - t0, 1),
-                            "chars": len(ans),
-                        })
-                st.session_state["arena_run"] = {"prompt": prompt.strip(), "results": results}
-                st.session_state.pop("arena_winner", None)
-
-        # --- Kết quả cạnh nhau ---
-        run_data = st.session_state.get("arena_run")
-        if run_data:
-            st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
-            results = run_data["results"]
-            res_cols = st.columns(len(results))
-            winner = st.session_state.get("arena_winner")
-            for i, r in enumerate(results):
-                with res_cols[i]:
-                    is_win = (winner == i)
-                    accent = "#34d399" if is_win else "#5ad7e6"
-                    crown = "🏆 " if is_win else ""
-                    st.markdown(
-                        f"<div style='border-top:2px solid {accent}; background:rgba(30,24,52,0.5); "
-                        f"border:1px solid rgba(255,255,255,0.07); border-radius:10px; "
-                        f"padding:8px 12px; margin-bottom:8px;'>"
-                        f"<div style='font-size:13px; font-weight:700; color:#fff;'>{crown}{escape(r['model'])}</div>"
-                        f"<div style='font-size:10px; color:#8b92b6; font-family:JetBrains Mono,monospace;'>"
-                        f"⏱ {r['elapsed']}s · {r['chars']} ký tự</div></div>",
-                        unsafe_allow_html=True,
-                    )
-                    st.markdown(r["answer"])
-                    label = "✓ Đã chọn" if is_win else "Chọn bản này"
-                    if st.button(label, key=f"arena_pick_{i}", use_container_width=True, disabled=is_win):
-                        st.session_state["arena_winner"] = i
-                        st.rerun()
-
-            # --- Lưu bản đã chọn thành Skill ---
-            if winner is not None:
-                win = results[winner]
-                st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
-                st.markdown(
-                    f"<div style='background:rgba(52,211,153,0.08); border:1px solid rgba(52,211,153,0.25); "
-                    f"border-radius:10px; padding:10px 14px; margin-bottom:8px;'>"
-                    f"<span style='color:#34d399; font-weight:700; font-size:13px;'>🏆 Đã chọn: {escape(win['model'])}</span>"
-                    f" <span style='color:#8b92b6; font-size:12px;'>— lưu lại để tái sử dụng</span></div>",
-                    unsafe_allow_html=True,
-                )
-                skill_name = st.text_input(
-                    "Tên Skill",
-                    key="skill_name",
-                    placeholder="VD: Chuyên gia viết mở bài khóa học",
-                )
-                note = st.text_area(
-                    "Ghi chú đánh giá / phản biện (tùy chọn)",
-                    key="arena_note",
-                    height=70,
-                    placeholder="Vì sao bản này tốt hơn? Điểm cần chỉnh khi dùng lại...",
-                )
-                if st.button("💾 Lưu thành Skill", use_container_width=True):
-                    if not skill_name.strip():
-                        st.warning("Đặt tên cho Skill trước khi lưu.")
-                    else:
-                        entry = {
-                            "id": f"sk_{int(time.time())}",
-                            "name": skill_name.strip(),
-                            "ts": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                            "prompt": run_data["prompt"],
-                            "model": win["model"],
-                            "answer": win["answer"],
-                            "note": note.strip(),
-                            "models_compared": [r["model"] for r in results],
-                        }
-                        skills = load_skills()
-                        skills.insert(0, entry)
-                        if save_skills(skills):
-                            st.success(f"Đã lưu Skill “{skill_name.strip()}” — xem ở bảng Skills bên phải.")
-                        else:
-                            st.warning("Không lưu được — kiểm tra bảng DataStore / quyền ghi anon trên Supabase.")
+        if mode == "💬 Chat":
+            render_chat_pane()
+        else:
+            render_arena_pane()
 
     with col_skills:
         render_skills_panel()

@@ -574,8 +574,9 @@ def minimax_tts(text: str) -> tuple[bytes | None, str | None]:
         return None, f"Không gọi được MiniMax TTS: {e}"
 
 
-def hermes_chat_reply(message: str) -> str:
-    """Gửi 1 tin nhắn tới Hermes shim, trả câu trả lời đã làm sạch (hoặc thông báo lỗi thân thiện)."""
+def hermes_chat_reply(message: str, model: str | None = None) -> str:
+    """Gửi 1 tin nhắn tới Hermes shim, trả câu trả lời đã làm sạch (hoặc thông báo lỗi thân thiện).
+    `model` (tùy chọn): ép Hermes dùng đúng model này theo request (shim mở rộng đọc field `model`)."""
     url = st.secrets.get("HERMES_API_URL")
     key = st.secrets.get("HERMES_API_KEY")
     if not url:
@@ -584,12 +585,16 @@ def hermes_chat_reply(message: str) -> str:
         headers = {"Content-Type": "application/json"}
         if key:
             headers["Authorization"] = f"Bearer {key}"
-        r = httpx.post(f"{url.rstrip('/')}/chat", json={"message": message}, headers=headers, timeout=180)
+        payload = {"message": message}
+        if model:
+            payload["model"] = model
+        r = httpx.post(f"{url.rstrip('/')}/chat", json=payload, headers=headers, timeout=180)
         if r.status_code == 401:
             return "⚠️ 401 Unauthorized — HERMES_API_KEY không khớp với shim trên VPS."
         r.raise_for_status()
         raw = r.json().get("reply", "")
         cleaned = raw.split("\n")
+        cleaned = [l for l in cleaned if "Normalized model" not in l]  # bỏ cảnh báo chuẩn-hoá model của Hermes
         cleaned = [l for l in cleaned if not (("Hermes" in l) and ("─" in l or "═" in l))]
         cleaned = [l.replace("│", "").strip() for l in cleaned]
         cleaned = [l for l in cleaned if not all(c in "─╭╰╯╮┬┴┼═║╔╗╚╝░▒▓█▄▀■-—_=+*#" for c in l.strip())]
@@ -955,6 +960,342 @@ def save_seo_transcripts(transcripts):
         return True
     except Exception:
         return False
+
+
+# ==============================================================================
+# WORKSPACE · MODEL ARENA (so sánh đa-model thật) + SKILL LIBRARY (lưu Skill)
+# ==============================================================================
+
+def load_skills() -> list:
+    """Đọc thư viện Skill đã lưu từ DataStore (key: workspace-skills)."""
+    try:
+        res = supabase.table("DataStore").select("data").eq("key", "workspace-skills").execute()
+        if res.data:
+            return res.data[0]["data"]
+    except Exception:
+        try:
+            res = supabase.table("datastore").select("data").eq("key", "workspace-skills").execute()
+            if res.data:
+                return res.data[0]["data"]
+        except Exception:
+            pass
+    return []
+
+
+def save_skills(entries: list) -> bool:
+    """Ghi thư viện Skill vào DataStore (anon client — giống save_seo_transcripts)."""
+    try:
+        res = supabase.table("DataStore").select("*").eq("key", "workspace-skills").execute()
+        if res.data:
+            supabase.table("DataStore").update({"data": entries}).eq("key", "workspace-skills").execute()
+        else:
+            supabase.table("DataStore").insert({"key": "workspace-skills", "data": entries}).execute()
+        return True
+    except Exception:
+        try:
+            res = supabase.table("datastore").select("*").eq("key", "workspace-skills").execute()
+            if res.data:
+                supabase.table("datastore").update({"data": entries}).eq("key", "workspace-skills").execute()
+            else:
+                supabase.table("datastore").insert({"key": "workspace-skills", "data": entries}).execute()
+            return True
+        except Exception:
+            pass
+    return False
+
+
+# Bộ định tuyến đa-model THẬT: mỗi nhãn map tới một provider gọi backend thật.
+# Cột thiếu key/quota sẽ báo trung thực (⚠️) thay vì bịa nội dung. Thêm model =
+# thêm 1 dòng ở đây; thêm key vào secrets là cột đó "sáng" lên.
+# So sánh model THẬT qua API trực tiếp. Mỗi nhãn → 1 provider thật; thiếu key thì
+# model_status báo 🟡 và cột hiện "⚠️ Chưa cấu hình ...". Hermes hiện chỉ cấu hình
+# DeepSeek nên để 1 cột "Hermes · deepseek". Gemini dùng endpoint OpenAI-compatible
+# của Google (cùng code path openai_chat). Thêm model = thêm 1 dòng; thêm key = cột sáng.
+MODEL_REGISTRY = {
+    "Hermes · deepseek":         {"provider": "hermes"},
+    "gpt-4o · OpenAI":           {"provider": "openai", "model": "gpt-4o",           "key": "OPENAI_API_KEY",   "base": "https://api.openai.com/v1"},
+    "gemini-2.5-flash · Google": {"provider": "openai", "model": "gemini-2.5-flash", "key": "GEMINI_API_KEY",   "base": "https://generativelanguage.googleapis.com/v1beta/openai"},
+    "deepseek-chat · DeepSeek":  {"provider": "openai", "model": "deepseek-chat",    "key": "DEEPSEEK_API_KEY", "base": "https://api.deepseek.com/v1"},
+    "minimax-m3 · MiniMax":      {"provider": "minimax", "model": "minimax-m3"},
+}
+ARENA_MODEL_CHOICES = list(MODEL_REGISTRY.keys())
+
+
+def model_status(label: str) -> tuple[bool, str]:
+    """(sẵn-sàng?, ghi-chú) — model nào đủ key/secret để gọi thật."""
+    cfg = MODEL_REGISTRY.get(label, {})
+    p = cfg.get("provider")
+    if p == "hermes":
+        ok = bool(st.secrets.get("HERMES_API_URL"))
+        if not ok:
+            return False, "thiếu HERMES_API_URL"
+        return True, "ép model qua Hermes" if cfg.get("hermes_model") else "Hermes auto"
+    if p == "minimax":
+        ok = bool(st.secrets.get("MINIMAX_API_KEY") and st.secrets.get("MINIMAX_GROUP_ID"))
+        return ok, "đã cấu hình" if ok else "thiếu MINIMAX_API_KEY"
+    if p == "openai":
+        ok = bool(st.secrets.get(cfg.get("key", "")))
+        return ok, "đã cấu hình" if ok else f"thiếu {cfg.get('key')}"
+    return False, "không rõ provider"
+
+
+def minimax_chat(prompt: str, model: str = "minimax-m3") -> str:
+    """Gọi MiniMax text chat (chatcompletion_v2). Báo lỗi nghiệp vụ trung thực."""
+    api_key = st.secrets.get("MINIMAX_API_KEY")
+    if not api_key:
+        return "⚠️ Chưa cấu hình MINIMAX_API_KEY."
+    base = st.secrets.get("MINIMAX_API_BASE", "https://api.minimax.io").rstrip("/")
+    try:
+        r = httpx.post(
+            f"{base}/v1/text/chatcompletion_v2",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={"model": model, "messages": [{"role": "user", "content": prompt}], "max_tokens": 2048},
+            timeout=120,
+        )
+        r.raise_for_status()
+        data = r.json()
+        br = data.get("base_resp") or {}
+        if br.get("status_code") not in (0, None):
+            return f"⚠️ MiniMax: {br.get('status_msg', 'lỗi')} (code {br.get('status_code')})"
+        return ((data.get("choices") or [{}])[0].get("message", {}).get("content") or "").strip() or "(MiniMax không trả nội dung)"
+    except Exception as e:
+        return f"⚠️ MiniMax lỗi kết nối: {e}"
+
+
+def openai_chat(prompt: str, model: str, base: str, key_name: str) -> str:
+    """OpenAI-compatible (OpenAI, DeepSeek...). Thiếu key thì báo, không bịa."""
+    key = st.secrets.get(key_name)
+    if not key:
+        return f"⚠️ Chưa cấu hình {key_name} trong secrets — thêm key để bật model này."
+    try:
+        r = httpx.post(
+            f"{base.rstrip('/')}/chat/completions",
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            json={"model": model, "messages": [{"role": "user", "content": prompt}]},
+            timeout=120,
+        )
+        r.raise_for_status()
+        return ((r.json().get("choices") or [{}])[0].get("message", {}).get("content") or "").strip() or "(không có nội dung)"
+    except Exception as e:
+        return f"⚠️ {key_name} lỗi: {e}"
+
+
+def run_model(model_label: str, prompt: str) -> str:
+    """Định tuyến 1 prompt tới provider THẬT theo MODEL_REGISTRY."""
+    cfg = MODEL_REGISTRY.get(model_label, {"provider": "hermes"})
+    p = cfg.get("provider")
+    if p == "minimax":
+        return minimax_chat(prompt, cfg.get("model", "minimax-m3"))
+    if p == "openai":
+        return openai_chat(prompt, cfg["model"], cfg["base"], cfg["key"])
+    return hermes_chat_reply(prompt, cfg.get("hermes_model"))  # hermes: auto hoặc ép model
+
+
+def render_workspace_bucket_nav(selected_bucket: str) -> None:
+    """Cột Buckets của Workspace — dùng chung cho explorer và Model Arena."""
+    st.markdown("<div style='font-size:11px; font-weight:700; color:#5b5478; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;'>Buckets</div>", unsafe_allow_html=True)
+    buckets = [
+        {"id": "compare", "label": "So sánh Model", "icon": "🆚"},
+        {"id": "goal", "label": "Goal Mode", "icon": "🎯"},
+        {"id": "apps", "label": "Apps", "icon": "📱"},
+        {"id": "video", "label": "Video", "icon": "🎥"},
+        {"id": "images", "label": "Images", "icon": "🖼️"},
+        {"id": "audio", "label": "Audio", "icon": "🎵"},
+        {"id": "sandboxes", "label": "Sandboxes", "icon": "📦"},
+        {"id": "pastes", "label": "Pastes", "icon": "📋"},
+    ]
+    for b in buckets:
+        active_class = "active" if b["id"] == selected_bucket else ""
+        st.markdown(f"""
+        <a class="nav-link side-item {active_class}" target="_self" href="?nav=hermes&tab=workspace&bucket={b['id']}" style="display:block; text-decoration:none;">
+            {b['icon']} {b['label']}
+        </a>
+        """, unsafe_allow_html=True)
+
+
+def render_skills_panel() -> None:
+    """Bảng Skill bên phải (kiểu CharmIQ Charms): tìm, mở xem, dùng lại, xóa."""
+    all_skills = load_skills()
+    st.markdown(
+        "<div style='display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;'>"
+        "<span style='font-size:13px; font-weight:700; color:#f3f1fb;'>⚡ Skills</span>"
+        f"<span style='font-size:11px; color:#5ad7e6; background:rgba(90,215,230,0.1); padding:1px 8px; border-radius:6px; font-weight:600;'>{len(all_skills)}</span>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    q = st.text_input("Tìm Skill", key="skill_search", placeholder="Search by Name", label_visibility="collapsed")
+    skills = all_skills
+    if q:
+        ql = q.lower()
+        skills = [s for s in all_skills if ql in (str(s.get("name", "")) + str(s.get("prompt", ""))).lower()]
+    if not skills:
+        st.caption("Chưa có Skill. Tạo nội dung, chọn bản tốt rồi “Lưu thành Skill”.")
+        return
+    for s in skills[:40]:
+        with st.expander(f"▶ {s.get('name', '(chưa đặt tên)')}"):
+            st.caption(f"{s.get('model', '?')} · {s.get('ts', '')}")
+            if s.get("note"):
+                st.caption(f"📝 {s['note']}")
+            st.markdown(s.get("answer", ""))
+            b1, b2 = st.columns(2)
+            with b1:
+                if st.button("↻ Dùng lại", key=f"skill_use_{s.get('id')}", use_container_width=True):
+                    st.session_state["arena_prefill"] = s.get("prompt", "")
+                    st.rerun()
+            with b2:
+                if st.button("🗑 Xóa", key=f"skill_del_{s.get('id')}", use_container_width=True):
+                    save_skills([x for x in all_skills if x.get("id") != s.get("id")])
+                    st.rerun()
+
+
+def render_workspace_compare(selected_bucket: str) -> None:
+    """Workspace Studio (kiểu CharmIQ): tạo nội dung qua nhiều model THẬT, đánh giá,
+    chọn bản tốt hơn, rồi lưu thành Skill (tái sử dụng ở bảng Skills bên phải)."""
+
+    # Nạp prompt từ Skill "Dùng lại" — phải đặt TRƯỚC khi tạo widget text_area.
+    if "arena_prefill" in st.session_state:
+        st.session_state["arena_prompt"] = st.session_state.pop("arena_prefill")
+
+    col_nav, col_main, col_skills = st.columns([0.8, 3, 1.4])
+
+    with col_nav:
+        render_workspace_bucket_nav(selected_bucket)
+
+    with col_main:
+        st.markdown(
+            "<div style='display:flex; align-items:center; gap:10px; margin-bottom:4px;'>"
+            "<span style='font-size:22px;'>🆚</span>"
+            "<span style='font-size:20px; font-weight:700; color:#f3f1fb;'>Model Arena</span>"
+            "<span style='font-size:11px; color:#5ad7e6; background:rgba(90,215,230,0.1); padding:2px 8px; border-radius:6px; font-weight:600;'>Workspace</span>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<p style='color:#8b92b6; font-size:13px; margin:0 0 10px 0;'>"
+            "Gửi một yêu cầu tới nhiều model thật, đặt kết quả cạnh nhau để xem xét – "
+            "phản biện – chọn bản tốt hơn, rồi lưu thành <b>Skill</b> để dùng lại.</p>",
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            "ℹ️ Mỗi cột gọi provider thật. “Hermes · deepseek” = agent live (hiện route DeepSeek). "
+            "OpenAI / Google / DeepSeek / MiniMax gọi API trực tiếp — cần key tương ứng trong secrets "
+            "(🟡 = thiếu key, 🟢 = sẵn sàng). Thêm key vào Streamlit Secrets là cột sáng lên."
+        )
+
+        # --- Cấu hình số cột + model mỗi cột (kèm trạng thái key thật) ---
+        n = st.radio("Số model so sánh", [2, 3, 4], horizontal=True, key="arena_num")
+        sel_cols = st.columns(n)
+        chosen_models = []
+        for i in range(n):
+            with sel_cols[i]:
+                m = st.selectbox(
+                    f"Cột {i + 1}",
+                    ARENA_MODEL_CHOICES,
+                    index=min(i, len(ARENA_MODEL_CHOICES) - 1),
+                    key=f"arena_model_{i}",
+                )
+                ok, note = model_status(m)
+                st.caption(("🟢 " if ok else "🟡 ") + note)
+                chosen_models.append(m)
+
+        prompt = st.text_area(
+            "Yêu cầu của bạn",
+            key="arena_prompt",
+            height=120,
+            placeholder="VD: Viết mở bài cho khóa học '21 ngày chia tay bệnh tiểu đường'...",
+        )
+
+        if st.button("🚀 Tạo & so sánh", type="primary", use_container_width=True):
+            if not prompt.strip():
+                st.warning("Nhập yêu cầu trước khi chạy.")
+            else:
+                results = []
+                with st.spinner(f"Đang chạy {n} model thật..."):
+                    for m in chosen_models:
+                        t0 = time.time()
+                        ans = run_model(m, prompt.strip())
+                        results.append({
+                            "model": m,
+                            "answer": ans,
+                            "elapsed": round(time.time() - t0, 1),
+                            "chars": len(ans),
+                        })
+                st.session_state["arena_run"] = {"prompt": prompt.strip(), "results": results}
+                st.session_state.pop("arena_winner", None)
+
+        # --- Kết quả cạnh nhau ---
+        run_data = st.session_state.get("arena_run")
+        if run_data:
+            st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
+            results = run_data["results"]
+            res_cols = st.columns(len(results))
+            winner = st.session_state.get("arena_winner")
+            for i, r in enumerate(results):
+                with res_cols[i]:
+                    is_win = (winner == i)
+                    accent = "#34d399" if is_win else "#5ad7e6"
+                    crown = "🏆 " if is_win else ""
+                    st.markdown(
+                        f"<div style='border-top:2px solid {accent}; background:rgba(30,24,52,0.5); "
+                        f"border:1px solid rgba(255,255,255,0.07); border-radius:10px; "
+                        f"padding:8px 12px; margin-bottom:8px;'>"
+                        f"<div style='font-size:13px; font-weight:700; color:#fff;'>{crown}{escape(r['model'])}</div>"
+                        f"<div style='font-size:10px; color:#8b92b6; font-family:JetBrains Mono,monospace;'>"
+                        f"⏱ {r['elapsed']}s · {r['chars']} ký tự</div></div>",
+                        unsafe_allow_html=True,
+                    )
+                    st.markdown(r["answer"])
+                    label = "✓ Đã chọn" if is_win else "Chọn bản này"
+                    if st.button(label, key=f"arena_pick_{i}", use_container_width=True, disabled=is_win):
+                        st.session_state["arena_winner"] = i
+                        st.rerun()
+
+            # --- Lưu bản đã chọn thành Skill ---
+            if winner is not None:
+                win = results[winner]
+                st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+                st.markdown(
+                    f"<div style='background:rgba(52,211,153,0.08); border:1px solid rgba(52,211,153,0.25); "
+                    f"border-radius:10px; padding:10px 14px; margin-bottom:8px;'>"
+                    f"<span style='color:#34d399; font-weight:700; font-size:13px;'>🏆 Đã chọn: {escape(win['model'])}</span>"
+                    f" <span style='color:#8b92b6; font-size:12px;'>— lưu lại để tái sử dụng</span></div>",
+                    unsafe_allow_html=True,
+                )
+                skill_name = st.text_input(
+                    "Tên Skill",
+                    key="skill_name",
+                    placeholder="VD: Chuyên gia viết mở bài khóa học",
+                )
+                note = st.text_area(
+                    "Ghi chú đánh giá / phản biện (tùy chọn)",
+                    key="arena_note",
+                    height=70,
+                    placeholder="Vì sao bản này tốt hơn? Điểm cần chỉnh khi dùng lại...",
+                )
+                if st.button("💾 Lưu thành Skill", use_container_width=True):
+                    if not skill_name.strip():
+                        st.warning("Đặt tên cho Skill trước khi lưu.")
+                    else:
+                        entry = {
+                            "id": f"sk_{int(time.time())}",
+                            "name": skill_name.strip(),
+                            "ts": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            "prompt": run_data["prompt"],
+                            "model": win["model"],
+                            "answer": win["answer"],
+                            "note": note.strip(),
+                            "models_compared": [r["model"] for r in results],
+                        }
+                        skills = load_skills()
+                        skills.insert(0, entry)
+                        if save_skills(skills):
+                            st.success(f"Đã lưu Skill “{skill_name.strip()}” — xem ở bảng Skills bên phải.")
+                        else:
+                            st.warning("Không lưu được — kiểm tra bảng DataStore / quyền ghi anon trên Supabase.")
+
+    with col_skills:
+        render_skills_panel()
+
 
 def create_seo_zip(articles, keyword):
     import io
@@ -1683,29 +2024,16 @@ if active in AGENTS:
             
             # Read Buckets and Files via query parameters for 100% stable state
             selected_bucket = st.query_params.get("bucket", "apps")
-            
+
+            # Model Arena — bucket "compare": studio đa-model + thư viện Skill (full-width).
+            if selected_bucket == "compare":
+                render_workspace_compare(selected_bucket)
+                st.stop()
+
             col_b, col_f, col_p = st.columns([1, 1.3, 2.7])
             
             with col_b:
-                st.markdown("<div style='font-size:11px; font-weight:700; color:#5b5478; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;'>Buckets</div>", unsafe_allow_html=True)
-                buckets = [
-                    {"id": "goal", "label": "Goal Mode", "icon": "🎯"},
-                    {"id": "apps", "label": "Apps", "icon": "📱"},
-                    {"id": "video", "label": "Video", "icon": "🎥"},
-                    {"id": "images", "label": "Images", "icon": "🖼️"},
-                    {"id": "audio", "label": "Audio", "icon": "🎵"},
-                    {"id": "sandboxes", "label": "Sandboxes", "icon": "📦"},
-                    {"id": "pastes", "label": "Pastes", "icon": "📋"},
-                ]
-                
-                for b in buckets:
-                    is_active = (b["id"] == selected_bucket)
-                    active_class = "active" if is_active else ""
-                    st.markdown(f"""
-                    <a class="nav-link side-item {active_class}" target="_self" href="?nav=hermes&tab=workspace&bucket={b['id']}" style="display:block; text-decoration:none;">
-                        {b['icon']} {b['label']}
-                    </a>
-                    """, unsafe_allow_html=True)
+                render_workspace_bucket_nav(selected_bucket)
                         
             with col_f:
                 st.markdown("<div style='font-size:11px; font-weight:700; color:#5b5478; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;'>Apps Explorer</div>", unsafe_allow_html=True)

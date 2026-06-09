@@ -56,6 +56,10 @@ def clean_reply(raw: str) -> str:
 API_KEY = os.environ["HERMES_API_KEY"]
 HERMES_BIN = os.environ.get("HERMES_BIN", "hermes")
 TIMEOUT = int(os.environ.get("HERMES_TIMEOUT", "120"))
+# Ép model theo request: shim chèn cờ --model <model>. Đổi cờ qua env nếu CLI khác
+# (mặc định --model theo NousResearch hermes-agent). Sanitize id -> chỉ là 1 argv.
+MODEL_FLAG = os.environ.get("HERMES_MODEL_FLAG", "--model")
+_MODEL_RE = re.compile(r"^[A-Za-z0-9/_.\-]{1,64}$")
 TASKS_FILE = os.path.expanduser("~/.hermes/tasks.json")
 
 # Đảm bảo thư mục lưu trữ tồn tại
@@ -75,6 +79,7 @@ app.add_middleware(
 
 class ChatIn(BaseModel):
     message: str
+    model: str = None  # tùy chọn: ép model cho request này (Model Arena)
 
 
 def _authorized(authorization: str) -> bool:
@@ -164,10 +169,18 @@ def chat(body: ChatIn, authorization: str = Header(default="")):
     if not msg:
         raise HTTPException(status_code=400, detail="empty message")
 
+    # arg list (KHÔNG shell) -> mỗi phần là 1 argv, chống shell injection.
+    cmd = [HERMES_BIN, "chat", "-q", msg]
+    model = (body.model or "").strip()
+    if model:
+        if not _MODEL_RE.match(model):
+            raise HTTPException(status_code=400, detail="invalid model id")
+        # ép model: hermes chat --model <model> -q "<msg>"
+        cmd = [HERMES_BIN, "chat", MODEL_FLAG, model, "-q", msg]
+
     try:
-        # arg list (KHÔNG shell) -> msg là 1 argv, chống shell injection
         proc = subprocess.run(
-            [HERMES_BIN, "chat", "-q", msg],
+            cmd,
             capture_output=True, text=True, timeout=TIMEOUT,
         )
     except subprocess.TimeoutExpired:

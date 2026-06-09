@@ -80,6 +80,32 @@ HERMES_API_KEY = "<đúng key ở bước 2>"
 
 Mở app → agent **Hermes** → khung chat "Chat với Hermes (thật)" hiện ra.
 
+## Ép model theo request (Model Arena)
+
+`/chat` nhận thêm field tùy chọn `model`. Khi có, shim chạy
+`hermes chat --model <model> -q "<msg>"` để **ép đúng model** thay vì để Hermes tự
+định tuyến. Dùng cho tab **Workspace → So sánh Model** (các cột "· Hermes").
+
+- Cờ `--model` theo CLI [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent).
+  Nếu bản của bạn khác, đổi qua env `HERMES_MODEL_FLAG` (vd `-m`).
+  Kiểm tra: `hermes chat --help` và `hermes model` (liệt kê model đã cấu hình).
+- `model` phải khớp id model trong cấu hình Hermes của bạn (có thể cần tiền tố vendor,
+  vd `openai/gpt-5.5`). Id mặc định app gửi = cột `model` trong `HERMES_MODELS` (app.py):
+  `gpt-5.5`, `deepseek-4-flash`, `minimax-m3` — sửa ở đó nếu CLI dùng id khác.
+- Bỏ trống `model` ⇒ giữ nguyên hành vi cũ (Hermes auto-route). **Tương thích ngược**:
+  shim cũ (chưa cập nhật) bỏ qua field `model`, không lỗi.
+
+Test ép model trên VPS:
+
+```bash
+curl -s -X POST localhost:9100/chat \
+  -H "Authorization: Bearer <HERMES_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Bạn là model nào?","model":"deepseek-4-flash"}'
+```
+
+Deploy bản mới: copy `hermes_api.py` mới lên VPS rồi `systemctl --user restart hermes-api`.
+
 ## Bảo mật
 
 - Key chỉ nằm trong `hermes-api.env` (VPS) + Streamlit Secrets — KHÔNG vào repo.

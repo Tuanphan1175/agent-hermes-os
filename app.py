@@ -1167,6 +1167,198 @@ def render_skills_panel() -> None:
         st.rerun()
 
 
+def render_skills_page() -> None:
+    """Trang quản lý Skills toàn trang — tạo mới, import JSON, export, xóa, gọi vào Workspace."""
+    render_custom_header("⚡", "WORKSPACE", "Skills", "Thư viện Skill tái sử dụng — tạo, import, gọi vào Workspace so sánh model.")
+
+    # Thông báo sau khi lưu/import thành công
+    if msg := st.session_state.pop("skp_toast", None):
+        st.success(msg)
+
+    all_skills = load_skills()
+
+    # --- Top action bar ---
+    bar_l, bar_m, bar_r = st.columns([3, 1.3, 1.2])
+    with bar_l:
+        q = st.text_input("🔍", key="skp_q", placeholder="Tìm Skill theo tên hoặc prompt…", label_visibility="collapsed")
+    with bar_m:
+        if st.button("✦ Tạo Skill mới", key="skp_open_create", type="primary", use_container_width=True):
+            st.session_state["skp_create_open"] = not st.session_state.get("skp_create_open", False)
+            st.session_state.pop("skp_import_open", None)
+    with bar_r:
+        if st.button("↥ Import JSON", key="skp_open_import", use_container_width=True):
+            st.session_state["skp_import_open"] = not st.session_state.get("skp_import_open", False)
+            st.session_state.pop("skp_create_open", None)
+
+    # --- Create form ---
+    if st.session_state.get("skp_create_open", False):
+        with st.container(border=True):
+            st.markdown("**✦ Tạo Skill mới**")
+            with st.form("skp_create_form", clear_on_submit=True):
+                name = st.text_input("Tên Skill *", placeholder="Ví dụ: Biên tập viên tiếng Việt")
+                prompt = st.text_area("Prompt / Persona", placeholder="Bạn là chuyên gia biên tập viên…", height=90)
+                col_m, col_n = st.columns(2)
+                with col_m:
+                    model = st.selectbox("Model mặc định", ARENA_MODEL_CHOICES, key="skp_create_model")
+                with col_n:
+                    note = st.text_input("Ghi chú (tuỳ chọn)")
+                c_sub, c_cancel = st.columns(2)
+                with c_sub:
+                    submitted = st.form_submit_button("✓ Lưu Skill", type="primary", use_container_width=True)
+                with c_cancel:
+                    cancelled = st.form_submit_button("✕ Hủy", use_container_width=True)
+            if submitted:
+                if not name.strip():
+                    st.error("Tên Skill không được để trống.")
+                else:
+                    entry = {
+                        "id": f"sk_{int(time.time()*1000)}",
+                        "name": name.strip(),
+                        "prompt": prompt.strip(),
+                        "model": model,
+                        "note": note.strip(),
+                        "ts": datetime.now().isoformat(),
+                        "answer": "",
+                        "models_compared": [],
+                    }
+                    all_skills.insert(0, entry)
+                    save_skills(all_skills)
+                    st.session_state["skp_create_open"] = False
+                    st.session_state["skp_toast"] = f"✓ Đã tạo Skill '{entry['name']}'"
+                    st.rerun()
+            if cancelled:
+                st.session_state["skp_create_open"] = False
+                st.rerun()
+
+    # --- Import JSON section ---
+    if st.session_state.get("skp_import_open", False):
+        with st.container(border=True):
+            st.markdown("**↥ Import Skill từ JSON**")
+            st.caption("Hỗ trợ: 1 Skill (object) hoặc nhiều Skill (array). Trùng ID sẽ bỏ qua.")
+            uploaded = st.file_uploader("Chọn file JSON", type=["json"], key="skp_import_file", label_visibility="collapsed")
+            if uploaded:
+                try:
+                    raw = json.loads(uploaded.read().decode("utf-8"))
+                    items = raw if isinstance(raw, list) else [raw]
+                    existing_ids = {s.get("id") for s in all_skills}
+                    new_items: list = []
+                    for idx_item, item in enumerate(items):
+                        if not isinstance(item, dict) or not item.get("name"):
+                            continue
+                        if not item.get("id"):
+                            item["id"] = f"sk_{int(time.time()*1000)}_{idx_item}"
+                        if item["id"] not in existing_ids:
+                            new_items.append(item)
+                            existing_ids.add(item["id"])
+                    st.info(f"Tìm thấy {len(new_items)} Skill mới từ file.")
+                    if st.button(f"✓ Import {len(new_items)} Skill", key="skp_do_import",
+                                 type="primary", disabled=(len(new_items) == 0)):
+                        save_skills(all_skills + new_items)
+                        st.session_state["skp_import_open"] = False
+                        st.session_state["skp_toast"] = f"✓ Đã import {len(new_items)} Skill"
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Lỗi parse JSON: {e}")
+            if st.button("✕ Đóng Import", key="skp_import_close"):
+                st.session_state["skp_import_open"] = False
+                st.rerun()
+
+    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+
+    # --- Stats + Export all ---
+    stats_l, stats_r = st.columns([3, 1])
+    with stats_l:
+        st.markdown(
+            f"<span style='color:#5ad7e6; font-weight:700; font-size:15px;'>{len(all_skills)} Skills</span>"
+            f"<span style='color:#6b7280; font-size:13px;'> trong thư viện</span>",
+            unsafe_allow_html=True,
+        )
+    with stats_r:
+        if all_skills:
+            st.download_button(
+                "⬇ Export tất cả",
+                data=json.dumps(all_skills, ensure_ascii=False, indent=2).encode("utf-8"),
+                file_name="skills_export.json",
+                mime="application/json",
+                key="skp_export_all",
+                use_container_width=True,
+            )
+
+    st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
+
+    # --- Filter ---
+    filtered = all_skills
+    if q:
+        ql = q.lower()
+        filtered = [s for s in all_skills if ql in (
+            s.get("name", "") + " " + s.get("prompt", "") + " " + s.get("note", "")
+        ).lower()]
+
+    if not filtered:
+        st.info(
+            "Không tìm thấy Skill nào khớp." if q else
+            "Chưa có Skill nào. Bấm [✦ Tạo Skill mới] bên trên, hoặc vào Workspace → 🆚 So sánh Model → Lưu thành Skill."
+        )
+        return
+
+    # --- Skills grid 3 cột ---
+    active_id = st.session_state.get("active_skill_id")
+    cols = st.columns(3, gap="medium")
+    for i, s in enumerate(filtered[:60]):
+        sid = s.get("id", f"idx_{i}")
+        is_active = (sid == active_id)
+        ok, ok_note = model_status(s.get("model", ARENA_MODEL_CHOICES[0]))
+        model_label = s.get("model", "?")
+        ok_clr = "#22c55e" if ok else "#f59e0b"
+        ok_bg = "34,197,94" if ok else "245,158,11"
+        prompt_prev = s.get("prompt", "")
+        note_text = s.get("note", "")
+        border_op = "0.25" if is_active else "0.08"
+        with cols[i % 3]:
+            st.markdown(
+                f"<div style='background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,{border_op}); "
+                f"border-radius:12px; padding:14px 14px 8px 14px; margin-bottom:2px;'>"
+                f"<div style='font-weight:700; font-size:14px; color:#f3f1fb; margin-bottom:6px;'>"
+                f"{'✅ ' if is_active else ''}{escape(s.get('name', '(chưa đặt tên)'))}</div>"
+                f"<div style='display:flex; gap:5px; flex-wrap:wrap; margin-bottom:6px;'>"
+                f"<span style='background:rgba(90,215,230,0.12); color:#5ad7e6; border-radius:5px; padding:1px 8px; font-size:11px;'>{escape(model_label)}</span>"
+                f"<span style='background:rgba({ok_bg},0.12); color:{ok_clr}; border-radius:5px; padding:1px 8px; font-size:11px;'>{'🟢' if ok else '🟡'} {escape(ok_note)}</span>"
+                f"</div>"
+                + (f"<div style='color:#8b92b6; font-size:12px; margin-bottom:5px;'>{escape(prompt_prev[:100])}{'…' if len(prompt_prev)>100 else ''}</div>" if prompt_prev else "")
+                + (f"<div style='color:#6b7280; font-size:11px;'>{escape(note_text)}</div>" if note_text else "")
+                + "</div>",
+                unsafe_allow_html=True,
+            )
+            b1, b2, b3 = st.columns([1.2, 1, 0.8])
+            with b1:
+                btn_lbl = "✕ Thôi dùng" if is_active else "▶ Gọi"
+                if st.button(btn_lbl, key=f"skp_use_{sid}", use_container_width=True):
+                    st.session_state["active_skill_id"] = None if is_active else sid
+                    st.rerun()
+            with b2:
+                st.download_button(
+                    "📋",
+                    data=json.dumps(s, ensure_ascii=False, indent=2).encode("utf-8"),
+                    file_name=f"skill_{sid}.json",
+                    mime="application/json",
+                    key=f"skp_dl_{sid}",
+                    use_container_width=True,
+                    help="Export Skill này",
+                )
+            with b3:
+                if st.button("🗑", key=f"skp_del_{sid}", use_container_width=True, help="Xóa Skill"):
+                    save_skills([x for x in all_skills if x.get("id") != sid])
+                    if active_id == sid:
+                        st.session_state["active_skill_id"] = None
+                    st.rerun()
+            st.markdown(
+                f"<a href='?nav=hermes&tab=workspace&bucket=compare' target='_self' "
+                f"style='font-size:11px; color:#5ad7e6; text-decoration:none;'>→ Dùng trong Workspace</a>",
+                unsafe_allow_html=True,
+            )
+            st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+
+
 def render_chat_pane() -> None:
     """Ô chat: gọi Skill (Charm) từ bảng phải -> trả lời bằng MODEL gán cho Skill đó;
     hoặc chat thường với model mặc định tuỳ chọn."""
@@ -1696,6 +1888,10 @@ with st.sidebar:
     yt_active = " active" if active == "youtube" else ""
     st.markdown(f"<a class='nav-link side-item{yt_active}' target='_self' href='?nav=youtube'>"
                 f"📺 YouTube Studio</a>", unsafe_allow_html=True)
+
+    sk_active = " active" if active == "skills" else ""
+    st.markdown(f"<a class='nav-link side-item{sk_active}' target='_self' href='?nav=skills'>"
+                f"⚡ Skills</a>", unsafe_allow_html=True)
 
     # 2. AGENTS Section
     st.markdown("<div class='sidebar-section-title'>Agents</div>", unsafe_allow_html=True)
@@ -4712,6 +4908,12 @@ if active == "youtube":
     st.stop()
 
 # ------------------------------------------------------------------------------
+# VIEW: SKILLS (thư viện Skill — tạo, import, gọi vào Workspace)
+# ------------------------------------------------------------------------------
+if active == "skills":
+    render_skills_page()
+    st.stop()
+
 # VIEW: ALL OTHER SELF SECTIONS (fallback cho SELF section chưa có view riêng)
 # ------------------------------------------------------------------------------
 if active in SELF_SECTIONS and active not in ["memory", "agenthq", "ideas", "youtube"]:

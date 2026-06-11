@@ -4811,7 +4811,7 @@ if active == "youtube":
                         st.session_state[tweak_key] = False
                         st.session_state.yt_toast = "Lưu ghi chú thành công!"
                         st.rerun()
-                    if st.button("Cancel", key=f"cancel_tw_{s['id']}", use_container_width=True):
+                    if st.form_submit_button("Cancel", key=f"cancel_tw_{s['id']}", use_container_width=True):
                         st.session_state[tweak_key] = False
                         st.rerun()
             else:

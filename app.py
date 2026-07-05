@@ -7,28 +7,18 @@ from html import escape
 import httpx
 import streamlit as st
 import pandas as pd
-from supabase import create_client, Client
+import local_db
 
 # ==============================================================================
-# 1. DATABASE CONNECTIVITY & KEY RETRIEVAL
+# 1. DATABASE CONNECTIVITY & KEY RETRIEVAL (MIGRATED TO LOCAL SQLITE)
 # ==============================================================================
-
-SUPABASE_URL = st.secrets.get("SUPABASE_URL", "https://your-project.supabase.co")
-SUPABASE_ANON_KEY = st.secrets.get("SUPABASE_ANON_KEY", "your-anon-key")
 
 # Core client (Public tables: obsidian_vault, mission_control)
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+supabase = local_db.supabase
 
 # Admin client (Sensitive tables: ai_spend)
-@st.cache_resource
-def get_admin_client() -> Client | None:
-    key = st.secrets.get("SUPABASE_SERVICE_ROLE_KEY")
-    if not key or key == "your-service-role-key" or key == "<service_role key>":
-        return None
-    try:
-        return create_client(SUPABASE_URL, key)
-    except Exception:
-        return None
+def get_admin_client():
+    return local_db.get_admin_client()
 
 # ==============================================================================
 # 2. PAGE INITIALIZATION & PREMIUM TYPOGRAPHY & DESIGN STYLES
@@ -45,6 +35,33 @@ st.markdown("""
     [data-testid="stHeader"] { background: transparent !important; }
     [data-testid="stToolbar"], [data-testid="stDecoration"] { display: none !important; }
     .block-container { padding-top: 2rem; padding-bottom: 2rem; }
+
+    /* Force expand sidebar button to be visible and styled premium cyan */
+    [data-testid="collapsedControl"] {
+        display: flex !important;
+        background-color: rgba(32, 26, 52, 0.8) !important;
+        border: 1px solid rgba(90, 215, 230, 0.3) !important;
+        border-radius: 8px !important;
+        color: #5ad7e6 !important;
+        box-shadow: 0 0 10px rgba(90, 215, 230, 0.2) !important;
+        top: 12px !important;
+        left: 12px !important;
+        z-index: 99999 !important;
+    }
+    [data-testid="collapsedControl"] button {
+        color: #5ad7e6 !important;
+    }
+    [data-testid="collapsedControl"] svg {
+        fill: #5ad7e6 !important;
+    }
+
+    /* Style collapse sidebar button inside the sidebar */
+    [data-testid="stSidebar"] button[aria-label="Close sidebar"] {
+        color: #5ad7e6 !important;
+    }
+    [data-testid="stSidebar"] button[aria-label="Close sidebar"] svg {
+        fill: #5ad7e6 !important;
+    }
 
     html, body, [class*="css"], .stApp {
         font-family: 'Outfit', sans-serif !important;
@@ -80,6 +97,68 @@ st.markdown("""
         border: 1px solid rgba(120,200,220,0.20) !important;
         color: #ffffff !important;
         box-shadow: inset 3px 0 0 #5ad7e6 !important;
+    }
+
+    /* Main content buttons: dark glass to match violet/indigo theme.
+       Streamlit's default white background + light text is unreadable on dark themes. */
+    .stButton > button {
+        background: rgba(30, 24, 52, 0.45) !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        border-radius: 10px !important;
+        color: #d8d4e6 !important;
+        font-weight: 500 !important;
+        transition: all 0.2s ease !important;
+    }
+    .stButton > button:hover {
+        background: linear-gradient(90deg, rgba(90, 200, 220, 0.15), rgba(120, 90, 230, 0.10)) !important;
+        border-color: rgba(90, 215, 230, 0.35) !important;
+        color: #ffffff !important;
+    }
+    .stButton > button:disabled {
+        opacity: 0.45 !important;
+        color: #8a84a6 !important;
+    }
+    /* Primary-variant buttons: stronger cyan accent */
+    .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #5ad7e6 0%, #4d6dff 100%) !important;
+        border: none !important;
+        color: #0a0715 !important;
+        font-weight: 600 !important;
+    }
+    .stButton > button[kind="primary"]:hover {
+        box-shadow: 0 0 16px rgba(90, 215, 230, 0.45) !important;
+        color: #0a0715 !important;
+    }
+
+    /* Form widget labels (Model / Skill / etc.) — default Streamlit label is too dim on dark theme. */
+    [data-testid="stWidgetLabel"] p,
+    [data-testid="stWidgetLabel"] span,
+    [data-testid="stWidgetLabel"] label,
+    label[data-testid="stWidgetLabel"] {
+        color: #c8c3de !important;
+        font-weight: 500 !important;
+    }
+    /* Selectbox / input text — keep readable on dark glass */
+    [data-testid="stSelectbox"] div[data-baseweb="select"] > div,
+    [data-testid="stChatInput"] textarea,
+    textarea[data-testid="stChatInputTextArea"],
+    [data-testid="stTextInput"] input {
+        color: #ffffff !important;
+        background: rgba(15, 11, 28, 0.55) !important;
+        -webkit-text-fill-color: #ffffff !important;
+    }
+    /* Chat input outer container — dark glass border instead of bright default */
+    [data-testid="stChatInput"] {
+        background: rgba(15, 11, 28, 0.55) !important;
+        border: 1px solid rgba(255, 255, 255, 0.10) !important;
+        border-radius: 12px !important;
+    }
+    [data-testid="stChatInput"] textarea::placeholder {
+        color: #8a84a6 !important;
+        -webkit-text-fill-color: #8a84a6 !important;
+    }
+    [data-testid="stSelectbox"] svg {
+        fill: #a5a1c0 !important;
     }
 
     /* Modern Styled Labels & Sections */
@@ -289,8 +368,8 @@ AGENTS = {
         "color": "#10b981"
     },
     "free-claude": {
-        "label": "Free Claude Code", "avatar": "▼", "cls": "av-freeclaw", 
-        "num": "VIII", "desc": "Zero per-token cost local Claude harness. Routing proxied intelligence with no operational overhead.",
+        "label": "Official Claude Code", "avatar": "▼", "cls": "av-freeclaw", 
+        "num": "VIII", "desc": "Official Anthropic Claude Code setup, workspace guidance, and safe coding workflow notes.",
         "color": "#34d399"
     }
 }
@@ -588,9 +667,19 @@ def hermes_chat_reply(message: str, model: str | None = None) -> str:
         payload = {"message": message}
         if model:
             payload["model"] = model
-        r = httpx.post(f"{url.rstrip('/')}/chat", json=payload, headers=headers, timeout=180)
+        r = httpx.post(f"{url.rstrip('/')}/chat", json=payload, headers=headers, timeout=50)
         if r.status_code == 401:
             return "⚠️ 401 Unauthorized — HERMES_API_KEY không khớp với shim trên VPS."
+        if r.status_code == 422:
+            try:
+                detail = r.json().get("detail", "")
+            except Exception:
+                detail = r.text
+            return (
+                "⚠️ Claude/Hermes từ chối request từ upstream. "
+                "Hãy mở session mới hoặc viết lại thành một task kỹ thuật hẹp. "
+                f"{detail}".strip()
+            )
         r.raise_for_status()
         raw = r.json().get("reply", "")
         cleaned = raw.split("\n")
@@ -2084,7 +2173,10 @@ if active in AGENTS:
                             who = "Người dùng" if m["role"] == "user" else "Trợ lý"
                             parts.append(f"{who}: {m['content']}")
                         parts.append("Trợ lý:")
-                        reply = run_model(chat_model, "\n\n".join(parts))
+                        try:
+                            reply = run_model(chat_model, "\n\n".join(parts))
+                        except Exception as e:
+                            reply = f"⚠️ Lỗi: {e}"
                         st.markdown(reply)
                 st.session_state.hermes_msgs.append({"role": "assistant", "content": reply})
                 
@@ -2403,9 +2495,9 @@ if active in AGENTS:
                         
                         <div style="border-left: 2px solid #5ad7e6; padding-left: 15px; margin-bottom: 25px;">
                             <span style="font-family: serif; font-size: 13px; font-style: italic; color: #5ad7e6;">Mistake II</span>
-                            <h3 style="margin: 2px 0 8px 0; color:#ffffff; font-size:17px; font-weight:500;">Paying for everything before exploring free</h3>
+                            <h3 style="margin: 2px 0 8px 0; color:#ffffff; font-size:17px; font-weight:500;">Picking the right tool for each job</h3>
                             <p style="font-size:13px; color:#8b92b6; line-height:1.5; margin:0;">
-                                $249/mo for Ahrefs. $45/mo for Frase. $30/mo for Midjourney. $20/mo for ChatGPT Plus. $20/mo for Claude Pro. $11/mo for ElevenLabs. <b>~$375/mo in tools</b> before I'd produced a single dollar that month. Then Owl Alpha showed up free on OpenRouter, Hermes was open-source from day one, and Free Claude Code routed the same Claude harness through whatever model I wanted at zero per-token cost.
+                                $249/mo for Ahrefs. $45/mo for Frase. $30/mo for Midjourney. $20/mo for ChatGPT Plus. $20/mo for Claude Pro. $11/mo for ElevenLabs. <b>~$375/mo in tools</b> before I'd produced a single dollar that month. The fix was boring and useful: keep official coding tools for repo work, use open-source agents for local automation, and route content tasks to cheaper models only when their providers explicitly support it.
                             </p>
                         </div>
                         
@@ -2627,7 +2719,7 @@ if __name__ == "__main__":
                 st.dataframe(df_a, use_container_width=True, hide_index=True)
             
     elif active == "free-claude":
-        tab_setup, tab_spend = st.tabs(["Setup & Tunnel", "AI Spend"])
+        tab_setup, tab_spend = st.tabs(["Official Setup", "AI Spend"])
 
         with tab_setup:
             st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
@@ -2636,32 +2728,32 @@ if __name__ == "__main__":
             <div style="background: rgba(30, 24, 52, 0.45); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 30px 25px; margin-bottom: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.35);">
                 <div style="font-size: 48px; margin-bottom: 12px; filter: drop-shadow(0 0 12px rgba(52, 211, 153, 0.5)); line-height: 1;">▼</div>
                 <h3 style="color:#ffffff; margin: 0 0 10px 0; font-family:'Outfit', sans-serif; font-size: 22px; font-weight: 500; letter-spacing: -0.5px;">
-                    Free Claude Code — Local Proxy
+                    Official Claude Code — Anthropic Setup
                 </h3>
                 <p style="color:#a5a1c0; font-size:14.5px; max-width:680px; margin: 0 auto 18px auto; line-height:1.65; font-weight: 300;">
-                    Routes Claude Code traffic qua 17 backend miễn phí (NVIDIA NIM, OpenRouter, Gemini, DeepSeek, Groq, Ollama…).
-                    <b>Chạy local trên máy bạn</b>, không host trên cloud — dùng <code>cloudflared</code> để tunnel ra public URL rồi dán vào đây để app này xác minh kết nối.
+                    Cài Claude Code chính thức, đăng nhập bằng tài khoản Anthropic, rồi chạy trong thư mục repo để tác nhân đọc ngữ cảnh và sửa code an toàn.
+                    Panel này chỉ giữ checklist vận hành; không cấu hình proxy hay endpoint thay thế cho Claude Code.
                 </p>
             </div>
             """, unsafe_allow_html=True)
 
             st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 18px 0 8px 0; font-weight:500;'>1. CÀI TRÊN MÁY LOCAL (PowerShell, chạy 1 lần)</div>", unsafe_allow_html=True)
-            st.code("irm https://github.com/Alishahryar1/free-claude-code/blob/main/scripts/install.ps1?raw=1 | iex", language="powershell")
+            st.code("npm install -g @anthropic-ai/claude-code", language="powershell")
 
-            st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 18px 0 8px 0; font-weight:500;'>2. KHỞI ĐỘNG PROXY (port 8082, để chạy nền)</div>", unsafe_allow_html=True)
-            st.code("fcc-server", language="powershell")
+            st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 18px 0 8px 0; font-weight:500;'>2. ĐĂNG NHẬP VÀ MỞ REPO</div>", unsafe_allow_html=True)
+            st.code("cd \"D:\\BÁC SĨ CHÍNH MÌNH\\Project\\agent-hermes-os\"\nclaude", language="powershell")
 
-            st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 18px 0 8px 0; font-weight:500;'>3. MỞ TUNNEL RA PUBLIC (Quick Tunnel — không cần tài khoản Cloudflare)</div>", unsafe_allow_html=True)
-            st.code("cloudflared tunnel --url http://127.0.0.1:8082", language="powershell")
-            st.caption("Sao chép URL `https://<...>.trycloudflare.com` xuất hiện trong output rồi dán vào ô bên dưới.")
+            st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 18px 0 8px 0; font-weight:500;'>3. KHI GẶP POLICY BLOCK</div>", unsafe_allow_html=True)
+            st.code("Ask for narrow repository changes only, and keep Claude Code on the official Anthropic endpoint.", language="text")
+            st.caption("Nếu lỗi vẫn xuất hiện, mở session mới và gửi task hẹp hơn, ví dụ: 'review app.py for bugs' hoặc 'fix the Streamlit error in this traceback'.")
 
             st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
             col_in, col_btn = st.columns([3, 1])
             with col_in:
                 proxy_url = st.text_input(
-                    "Public tunnel URL",
+                    "Optional API health URL",
                     value=st.session_state.get("fcc_tunnel_url", ""),
-                    placeholder="https://<random>.trycloudflare.com",
+                    placeholder="https://api.anthropic.com",
                     key="fcc_tunnel_url_input",
                     label_visibility="visible",
                 )
@@ -2674,7 +2766,7 @@ if __name__ == "__main__":
 
             if test_clicked and proxy_url:
                 clean = proxy_url.rstrip("/")
-                with st.spinner("Pinging proxy..."):
+                with st.spinner("Checking endpoint..."):
                     try:
                         r = httpx.get(f"{clean}/v1/models", timeout=10)
                         st.session_state["fcc_test_result"] = ("ok", r.status_code, clean)
@@ -2687,8 +2779,8 @@ if __name__ == "__main__":
                 if kind == "ok":
                     st.markdown(f"""
                     <div style="background: rgba(52, 211, 153, 0.10); border: 1px solid rgba(52, 211, 153, 0.35); border-radius: 10px; padding: 14px 18px; margin-top: 10px;">
-                        <div style="color:#34d399; font-weight:600; font-size:14px; margin-bottom:4px;">✓ Tunnel reachable (HTTP {payload})</div>
-                        <div style="color:#a5a1c0; font-size:12.5px;">Proxy tại <code>{escape(url)}</code> đang phản hồi. Copy env vars bên dưới vào VSCode/Claude Code để bắt đầu route traffic.</div>
+                        <div style="color:#34d399; font-weight:600; font-size:14px; margin-bottom:4px;">✓ Endpoint reachable (HTTP {payload})</div>
+                        <div style="color:#a5a1c0; font-size:12.5px;">Endpoint <code>{escape(url)}</code> đang phản hồi. Claude Code vẫn nên dùng cấu hình chính thức của Anthropic.</div>
                     </div>
                     """, unsafe_allow_html=True)
                 else:
@@ -2701,23 +2793,20 @@ if __name__ == "__main__":
 
             tunnel_url = st.session_state.get("fcc_tunnel_url", "").rstrip("/")
             if tunnel_url:
-                st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 22px 0 8px 0; font-weight:500;'>4. DÁN VÀO CLAUDE CODE / VSCODE</div>", unsafe_allow_html=True)
+                st.markdown("<div style='font-size:13px; color:#a5a1c0; letter-spacing:0.5px; margin: 22px 0 8px 0; font-weight:500;'>4. GHI CHÚ CẤU HÌNH</div>", unsafe_allow_html=True)
                 env_block = (
                     "{\n"
-                    f'  "ANTHROPIC_BASE_URL": "{tunnel_url}",\n'
-                    '  "ANTHROPIC_AUTH_TOKEN": "freecc",\n'
-                    '  "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1",\n'
                     '  "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "190000"\n'
                     "}"
                 )
                 st.code(env_block, language="json")
-                st.caption("VSCode: Settings → claude-code.environmentVariables → Edit in settings.json. Claude CLI: chạy `fcc-claude`.")
+                st.caption("VSCode: Settings → claude-code.environmentVariables → Edit in settings.json. Giữ endpoint mặc định của Anthropic trừ khi tài liệu chính thức yêu cầu khác.")
 
         with tab_spend:
             st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
             df_a = get_ai_spend(active)
             if df_a.empty:
-                st.info(f"No logged token cost events for agent: **{a['label']}**. (Free Claude Code là local proxy — chi phí được track ở Admin UI của proxy, không qua bảng Supabase này.)")
+                st.info(f"No logged token cost events for agent: **{a['label']}**. Claude Code billing and usage live in your Anthropic account, not in this SQLite table.")
             else:
                 df_a["cost_usd"] = pd.to_numeric(df_a["cost_usd"], errors="coerce").fillna(0)
                 df_a["input_tokens"] = pd.to_numeric(df_a["input_tokens"], errors="coerce").fillna(0)

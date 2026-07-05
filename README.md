@@ -46,50 +46,37 @@ Bảng điều khiển trực quan (Streamlit + Supabase) cho hệ điều hành
 
 ## Cài đặt & chạy
 
-1. Cài phụ thuộc:
+1. Cài đặt các thư viện phụ thuộc:
    ```bash
    pip install -r requirements.txt
    ```
-2. Tạo cấu hình từ mẫu rồi điền key thật:
+2. Tạo cấu hình cục bộ từ tệp mẫu:
    ```bash
    cp .streamlit/secrets.toml.example .streamlit/secrets.toml
    ```
-   Lấy key tại Supabase → **Settings → API** (`URL`, `anon`, `service_role`).
-3. Khởi tạo cơ sở dữ liệu: mở Supabase → **SQL Editor** → dán `security/00_full_setup.sql` → **Run**.
-4. Chạy app:
+   *Lưu ý: Mở tệp `.streamlit/secrets.toml` và điều chỉnh đường dẫn thư mục Obsidian của bạn tại dòng `OBSIDIAN_VAULT_PATH`.*
+3. Khởi chạy ứng dụng:
    ```bash
    streamlit run app.py
    ```
-   Mặc định: http://localhost:8501
+   *Cơ sở dữ liệu SQLite cục bộ `hermes_os.db` sẽ tự động được khởi tạo và khôi phục dữ liệu từ thư mục `backups/` trong lần đầu chạy.*
 
-## Tích hợp chi phí (tùy chọn)
+   Mặc định mở tại địa chỉ: http://localhost:8501
 
-Tại điểm cuối mỗi luồng gọi LLM (n8n), đẩy token tiêu hao về bảng `ai_spend` bằng **HTTP Request Node** dùng **service_role key** (lưu trong n8n Credentials). Hướng dẫn từng bước (credential, tính cost, node, test, troubleshoot): [`docs/n8n-ai-spend.md`](docs/n8n-ai-spend.md).
+## Đồng bộ Obsidian Vault cục bộ
 
-## Git Robot — sao lưu tự động
-
-`.github/workflows/daily-backup.yml` chạy 00:00 giờ VN hằng ngày (hoặc bấm tay qua
-**Actions → Run workflow**): export 3 bảng Supabase ra `backups/*.json` rồi commit về repo.
-
-Cần thêm 2 secrets tại **Settings → Secrets and variables → Actions**:
-
-| Secret | Giá trị |
-|---|---|
-| `SUPABASE_URL` | URL project Supabase |
-| `SUPABASE_SERVICE_ROLE_KEY` | service_role key (đọc cả `ai_spend`) |
-
-## Verify giao diện
-
+Để đồng bộ các ghi chú Obsidian mới nhất từ máy tính của bạn vào cơ sở dữ liệu cục bộ:
 ```bash
-pip install -r requirements-dev.txt && playwright install chromium
-python shoot.py   # tạo shot_memory.png, shot_openclaw.png, ...
+python scripts/run_sync.py
 ```
 
-## Deploy
+## Sao lưu cơ sở dữ liệu
 
-Triển khai trên **Streamlit Community Cloud** (native, free, tự build mỗi push). Vercel
-không hợp Streamlit (serverless không giữ được server + websocket). Hướng dẫn từng bước:
-[`docs/deploy-streamlit-cloud.md`](docs/deploy-streamlit-cloud.md).
+Để xuất toàn bộ dữ liệu từ tệp cơ sở dữ liệu SQLite cục bộ ra các tệp JSON trong thư mục `backups/` trước khi commit & push lên Git:
+```bash
+python scripts/backup_sqlite.py
+```
+
 
 ---
 

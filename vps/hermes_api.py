@@ -20,6 +20,12 @@ from pydantic import BaseModel
 import json
 import uuid
 
+_POLICY_PATTERNS = (
+    "unable to respond to this request",
+    "appears to violate",
+    "double press esc",
+)
+
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 _NOISE = (
     "Query:", "Initializing agent", "Resume this session", "hermes --resume",
@@ -51,6 +57,11 @@ def clean_reply(raw: str) -> str:
     # Dự phòng: bỏ các dòng nhiễu đã biết
     keep = [l for l in lines if l.strip() and not l.strip().startswith(_NOISE)]
     return "\n".join(keep).strip()
+
+
+def is_policy_error(text: str) -> bool:
+    normalized = (text or "").lower()
+    return any(pattern in normalized for pattern in _POLICY_PATTERNS)
 
 
 API_KEY = os.environ["HERMES_API_KEY"]
@@ -189,7 +200,18 @@ def chat(body: ChatIn, authorization: str = Header(default="")):
         raise HTTPException(status_code=500, detail=f"không tìm thấy lệnh {HERMES_BIN}")
 
     if proc.returncode != 0:
-        raise HTTPException(status_code=500, detail=(proc.stderr or "hermes error")[-500:])
+        err = proc.stderr or proc.stdout or "hermes error"
+        if is_policy_error(err):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Upstream model refused this request. "
+                    "Start a new session or rewrite the request as a narrow coding task. "
+                    "Keep the request focused on repository files, commands, logs, "
+                    "and software changes."
+                ),
+            )
+        raise HTTPException(status_code=500, detail=err[-500:])
 
     return {"reply": clean_reply(proc.stdout)}
 

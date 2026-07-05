@@ -1,1 +1,24 @@
-[]
+[
+  {
+    "id": "script-1",
+    "title": "How To Build a Public Scoreboard for 7 AI Agents in OpenClaw",
+    "hook": false,
+    "outline": true,
+    "fullScript": false,
+    "status": "pending_review",
+    "category": "ideas",
+    "type": "articles",
+    "notes": ""
+  },
+  {
+    "id": "script-2",
+    "title": "How To Run OpenClaw With Claude and Gemma 4 for $30/Month",
+    "hook": true,
+    "outline": true,
+    "fullScript": true,
+    "status": "pending_review",
+    "category": "ideas",
+    "type": "videos",
+    "notes": ""
+  }
+]

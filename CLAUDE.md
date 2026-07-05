@@ -1,60 +1,59 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides coding guidance for agents working in this repository.
 
-## What this is
+## What This Is
 
-Hermes OS Dashboard — a single-file Streamlit app (`app.py`) backed by Supabase. It's a "cockpit" UI over three Supabase tables: an Obsidian note index (`obsidian_vault`), AI token spend (`ai_spend`), and campaign goals (`mission_control`). Live on Streamlit Community Cloud. Most prose (README, docs, code comments) is Vietnamese; keep new comments in Vietnamese to match.
+Hermes OS Dashboard is a single-file Streamlit app (`app.py`) backed by local SQLite (`hermes_os.db` through `local_db.py`). It shows local tables for an Obsidian note index, AI token spend, campaign goals, ideas, and datastore entries.
 
 ## Commands
 
 ```bash
-pip install -r requirements.txt                 # runtime deps (streamlit, supabase, pandas, httpx)
-streamlit run app.py                            # run dashboard -> http://localhost:8501
+pip install -r requirements.txt
+streamlit run app.py
 
 pip install -r requirements-dev.txt && playwright install chromium
-python shoot.py                                 # Playwright screenshots of the UI (visual verify)
+python shoot.py
 
-python scripts/backup_supabase.py               # export 3 tables -> backups/*.json (needs env, see below)
-python scripts/sync_obsidian.py --vault PATH    # sync local Obsidian vault -> obsidian_vault table (needs env; --dry-run to preview)
-python scripts/run_sync.py                       # same sync, reads creds + OBSIDIAN_VAULT_PATH from .streamlit/secrets.toml
-python scripts/install_task.py                   # register Windows Task Scheduler job (runs sync_obsidian.bat every 6h); --remove to delete
+python scripts/backup_sqlite.py
+python scripts/sync_obsidian.py --vault PATH
+python scripts/run_sync.py
+python scripts/install_task.py
 ```
 
-**Obsidian → Supabase sync.** `sync_obsidian.py` mirrors a local Obsidian vault into `obsidian_vault` (full delete+insert), deriving Recent/Notes/Omi categories and parsing `[[wikilinks]]` into the `links jsonb` column that drives the Memory graph. The vault is local-only, so automation is local (not GitHub Actions — a cloud runner can't read the vault): `run_sync.py` loads creds + `OBSIDIAN_VAULT_PATH` from `secrets.toml`, `sync_obsidian.bat` wraps it with logging to `scripts/sync-log.txt`, and `install_task.py` registers a Task Scheduler job that runs it every 6h.
-
-There is **no test suite, linter, or build step.** Verification is visual: run the app or `shoot.py`.
+There is no formal test suite, linter, or build step. Verify changes with `python -m py_compile app.py vps/hermes_api.py`, the Streamlit app, or `python shoot.py` when visual checks are needed.
 
 ## Secrets
 
-App reads everything via `st.secrets` — never hardcode keys. Local config lives in `.streamlit/secrets.toml` (gitignored; copy from `.streamlit/secrets.toml.example`). On Streamlit Cloud, set the same keys under Settings → Secrets.
+Read configuration through `st.secrets`. Local config lives in `.streamlit/secrets.toml`, which is gitignored.
 
-- `SUPABASE_URL`, `SUPABASE_ANON_KEY` — required; public reads.
-- `SUPABASE_SERVICE_ROLE_KEY` — optional; without it the AI Spend panels show a warning instead of data.
-- `HERMES_API_URL`, `HERMES_API_KEY` — optional; enable the live Hermes chat panel.
+- `HERMES_API_URL`, `HERMES_API_KEY`: optional, enable the live Hermes chat panel.
 
-`scripts/backup_supabase.py` reads `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` from env (GitHub Actions secrets), not `st.secrets`.
+`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are no longer needed by the app after the SQLite migration.
+
+## Scope
+
+- Treat work in this repo as software engineering: code, docs, deployment, data sync, and UI verification.
+- Keep edits small and aligned with the existing Streamlit and SQLite wrapper patterns.
+- Use official provider configuration for coding tools and AI services unless provider documentation says otherwise.
 
 ## Architecture
 
-**Two Supabase clients, by design (`app.py`).** This split is the security model — do not collapse it:
-- `supabase` (anon key, module level) reads only RLS-public tables: `obsidian_vault`, `mission_control`.
-- `get_admin_client()` (service_role, `@st.cache_resource`) reads `ai_spend`, which has **no anon RLS policy** and is intentionally unreadable by anon. Returns `None` when the key is absent/placeholder; every caller must handle `None`.
+`local_db.py` provides a small Supabase-like query builder on top of SQLite.
 
-**Navigation is URL-driven, not session state.** `active = st.query_params.get("nav", "memory")` picks the view. Sidebar entries are hand-rolled `<a href='?nav=...' target='_self'>` anchors (not `st.button`) so they deep-link. Each view block checks `active` and calls `st.stop()` so only one panel renders per run. Adding a view = add a key to `AGENTS` or `SELF_SECTIONS`, render on its `active` value, `st.stop()`.
+- `supabase` reads and writes local tables such as `obsidian_vault`, `mission_control`, `ideas`, and `datastore`.
+- `get_admin_client()` returns the same local client for `ai_spend`.
 
-- `AGENTS` (claude/openclaw/hermes): per-agent spend filtered by `model_name ILIKE %<key>%`.
-- `SELF_SECTIONS` (goals/seo/studio/journal/memory/guide): filter the vault by a substring `match` against `file_path`/`file_name`; `memory` (match `None`) is the full-vault home view.
+Navigation is URL-driven: `active = st.query_params.get("nav", "memory")`. Sidebar entries are anchor links, and each view block stops after rendering.
 
-**XSS:** all DB values rendered through `unsafe_allow_html=True` are passed through `html.escape()` first (see `render_vault_card`). Preserve this when adding markup.
+Values rendered through `unsafe_allow_html=True` should be escaped with `html.escape()` first.
 
-**Hermes live chat (`render_hermes_chat`)** POSTs to a separate FastAPI shim, not Supabase. The shim (`vps/hermes_api.py`) runs on a VPS and wraps the `hermes chat -q` CLI via `subprocess` (arg list, no `shell=True`), Bearer-auth'd with constant-time compare, listening on localhost only. `clean_reply()` strips ANSI + the CLI's box-drawing frame to extract the answer. Hermes has no REST API of its own — the shim exists solely to bridge that gap.
+The live Hermes panel calls the separate FastAPI shim in `vps/hermes_api.py`. The shim wraps the `hermes chat -q` CLI with `subprocess.run` using an argument list, not `shell=True`, and authenticates with a bearer token.
 
 ## Database
 
-`security/00_full_setup.sql` is the source of truth for schema + seed + RLS — paste-and-run once in the Supabase SQL Editor. It `DROP`s the three tables first, so re-running wipes data. `security/rls_policies.sql` is the RLS-only subset for when tables already exist. The Streamlit code assumes these exact columns; changing the schema means updating both the SQL and the `pd.to_numeric(...)` coercions in `app.py`.
+The local SQLite file is `hermes_os.db` in the project root. `local_db.py` initializes and seeds it when needed. Refresh JSON backups with:
 
-## Deploy & backup
-
-- Deploys to **Streamlit Community Cloud** (auto-builds on push to `main`). Vercel won't work — Streamlit needs a persistent server + websocket. See `docs/deploy-streamlit-cloud.md`.
-- `.github/workflows/daily-backup.yml` runs `scripts/backup_supabase.py` daily (00:00 VN) and commits `backups/*.json`. Needs `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` as Actions secrets.
+```bash
+python scripts/backup_sqlite.py
+```

@@ -13,6 +13,7 @@ venv/
 streamlit.log
 shot_*.png
 scripts/sync-log.txt
+hermes_os.db
 
 # Claude local config
 .claude/settings.local.json

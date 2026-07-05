@@ -25,7 +25,9 @@ import sys
 import time
 from pathlib import Path
 
-from supabase import create_client
+# Thêm thư mục gốc vào path để import local_db
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+import local_db
 
 # Console Windows mặc định cp1252 không in được ký tự Unicode (path/tiếng Việt) -> ép UTF-8.
 if hasattr(sys.stdout, "reconfigure"):
@@ -151,13 +153,8 @@ def main() -> None:
         print("(dry-run — KHÔNG ghi DB)")
         return
 
-    url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-    if not url or not key:
-        raise SystemExit("Thiếu SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY trong env")
-
-    sb = create_client(url, key)
-    # Full re-sync: xóa sạch (cần filter cho PostgREST) rồi insert lại.
+    sb = local_db.supabase
+    # Full re-sync: xóa sạch rồi insert lại.
     sb.table("obsidian_vault").delete().neq("id", 0).execute()
     if rows:
         sb.table("obsidian_vault").insert(rows).execute()

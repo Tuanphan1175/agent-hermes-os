@@ -1,1 +1,29 @@
-[]
+[
+  {
+    "id": "idea-1",
+    "title": "Auto-sync Obsidian with Telegram Agent",
+    "description": "Trigger an alert on Telegram whenever a new note is added to the vault.",
+    "category": "Experiment",
+    "source": "sage",
+    "status": "pending",
+    "timestamp": "2026-06-15 02:10:16"
+  },
+  {
+    "id": "idea-2",
+    "title": "Build a custom n8n dashboard for token cost tracking",
+    "description": "Render a bar chart of everyday model expenses with direct API calls.",
+    "category": "Build",
+    "source": "max",
+    "status": "approved",
+    "timestamp": "2026-06-15 02:10:16"
+  },
+  {
+    "id": "idea-3",
+    "title": "Create a 5-minute video tutorial explaining OpenClaw setup",
+    "description": "High-retention script outline demonstrating local swarm coordination.",
+    "category": "Content",
+    "source": "nova",
+    "status": "pending",
+    "timestamp": "2026-06-15 02:10:16"
+  }
+]

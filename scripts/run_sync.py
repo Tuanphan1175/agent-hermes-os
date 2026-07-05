@@ -34,19 +34,8 @@ def main() -> None:
     if not vault:
         raise SystemExit("Thiếu vault path: thêm OBSIDIAN_VAULT_PATH vào secrets.toml hoặc truyền arg")
 
-    try:
-        url = secrets["SUPABASE_URL"]
-        key = secrets["SUPABASE_SERVICE_ROLE_KEY"]
-    except KeyError as e:
-        raise SystemExit(f"Thiếu key trong secrets.toml: {e}")
-
-    env = os.environ.copy()
-    env["SUPABASE_URL"] = url
-    env["SUPABASE_SERVICE_ROLE_KEY"] = key
-
     rc = subprocess.run(
-        [sys.executable, str(REPO / "scripts" / "sync_obsidian.py"), "--vault", vault],
-        env=env,
+        [sys.executable, str(REPO / "scripts" / "sync_obsidian.py"), "--vault", vault]
     ).returncode
     sys.exit(rc)
 

@@ -951,6 +951,71 @@ def save_youtube_scripts(scripts):
     except Exception:
         return False
 
+
+def render_copy_button(label: str, text: str, key: str) -> None:
+    """Render nút copy clipboard thật bằng browser Clipboard API."""
+    payload = json.dumps(text or "").replace("</", "<\\/")
+    button_id = f"copy_btn_{key}".replace("-", "_")
+    status_id = f"copy_status_{key}".replace("-", "_")
+    st.components.v1.html(
+        f"""
+        <button id="{button_id}" style="
+            display:inline-flex; align-items:center; gap:8px;
+            background:rgba(30,24,52,0.72);
+            border:1px solid rgba(255,255,255,0.10);
+            border-radius:10px;
+            color:#ffffff;
+            padding:12px 18px;
+            font:600 14px system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+            cursor:pointer;
+            min-width:174px;
+            justify-content:center;
+        ">
+            📋 {label}
+        </button>
+        <span id="{status_id}" style="
+            margin-left:10px; color:#34d399;
+            font:600 12px system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+            opacity:0; transition:opacity .18s ease;
+        ">Copied</span>
+        <script>
+        const copyText = {payload};
+        const btn = document.getElementById("{button_id}");
+        const status = document.getElementById("{status_id}");
+        function fallbackCopy(text) {{
+            const area = document.createElement("textarea");
+            area.value = text;
+            area.style.position = "fixed";
+            area.style.left = "-9999px";
+            document.body.appendChild(area);
+            area.focus();
+            area.select();
+            const ok = document.execCommand("copy");
+            document.body.removeChild(area);
+            return ok;
+        }}
+        btn.addEventListener("click", async () => {{
+            let ok = false;
+            try {{
+                if (navigator.clipboard && window.isSecureContext) {{
+                    await navigator.clipboard.writeText(copyText);
+                    ok = true;
+                }}
+            }} catch (err) {{}}
+            if (!ok) ok = fallbackCopy(copyText);
+            status.textContent = ok ? "Copied" : "Press Ctrl+C";
+            status.style.opacity = "1";
+            btn.textContent = ok ? "✓ Copied" : "Select text";
+            setTimeout(() => {{
+                status.style.opacity = "0";
+                btn.textContent = "📋 {label}";
+            }}, 1600);
+        }});
+        </script>
+        """,
+        height=52,
+    )
+
 def load_seo_campaigns():
     try:
         res = supabase.table("DataStore").select("data").eq("key", "seo-campaigns").execute()
@@ -4947,10 +5012,9 @@ if active == "youtube":
                 </style>
                 """, unsafe_allow_html=True)
                 
-                if st.button(f"📋 Copy Full Script", key=f"copy_{s['id']}"):
-                    script_content = s.get("script_text")
-                    if not script_content:
-                        script_content = f"""TITLE: {s['title']}
+                script_content = s.get("script_text")
+                if not script_content:
+                    script_content = f"""TITLE: {s['title']}
 --------------------------------------------------
 [HOOK]
 (0:00 - 0:30)
@@ -4965,9 +5029,8 @@ if active == "youtube":
 
 [FULL SCRIPT BODY]
 (Read the full script text draft here... complete tutorial details included)"""
-                    st.code(script_content, language="text")
-                    st.toast("Sao chép Script thành công!", icon="📋")
-                    
+                render_copy_button("Copy Full Script", script_content, f"yt_{s['id']}")
+
                 st.markdown("<span style='margin-right:8px;'></span>", unsafe_allow_html=True)
                 if st.button(f"✓ Approve & Generate Script", key=f"appr_gen_{s['id']}"):
                     s["hook"] = True

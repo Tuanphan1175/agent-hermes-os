@@ -232,7 +232,14 @@ def init_db():
             cursor.execute("INSERT INTO datastore (key, data) VALUES (?, ?)", ("seo-transcripts", json.dumps(seo_trans)))
         else:
             cursor.execute("INSERT INTO datastore (key, data) VALUES (?, ?)", ("seo-transcripts", json.dumps([])))
-            
+
+        # Workspace Skills
+        ws_skills = load_backup("workspace_skills.json")
+        if ws_skills:
+            cursor.execute("INSERT INTO datastore (key, data) VALUES (?, ?)", ("workspace-skills", json.dumps(ws_skills)))
+        else:
+            cursor.execute("INSERT INTO datastore (key, data) VALUES (?, ?)", ("workspace-skills", json.dumps([])))
+
         conn.commit()
     conn.close()
 

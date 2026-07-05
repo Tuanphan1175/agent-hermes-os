@@ -35,7 +35,8 @@ for table in TABLES:
 datastore_mappings = {
     "youtube-scripts": "youtube_scripts.json",
     "seo-campaigns": "seo_campaigns.json",
-    "seo-transcripts": "seo_transcripts.json"
+    "seo-transcripts": "seo_transcripts.json",
+    "workspace-skills": "workspace_skills.json"
 }
 
 for key, filename in datastore_mappings.items():
